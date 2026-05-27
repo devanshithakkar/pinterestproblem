@@ -1,0 +1,32 @@
+export const quickSaves = [
+  {
+    title: "Sage desk setup",
+    caption: "coding workspace with laptop, green lamp, dashboard sketches and terminal notes",
+    tags: "coding, laptop, dashboard, workspace",
+    imageUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80",
+    source: "Quick save",
+    fileName: "coding-desk-dashboard.jpg",
+    dominantColor: "green",
+    height: 610,
+  },
+  {
+    title: "Tomato basil pasta",
+    caption: "simple recipe with pasta, tomato, basil, olive oil and a bright kitchen counter",
+    tags: "recipe, pasta, kitchen, food",
+    imageUrl: "https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=900&q=80",
+    source: "Quick save",
+    fileName: "fresh-pasta-recipe.jpg",
+    dominantColor: "red",
+    height: 690,
+  },
+  {
+    title: "Soft bedroom shelf",
+    caption: "room decor with books, plant, warm lamp and minimal shelf styling",
+    tags: "decor, room, plant, lamp",
+    imageUrl: "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=900&q=80",
+    source: "Quick save",
+    fileName: "room-decor-plant-shelf.jpg",
+    dominantColor: "white",
+    height: 540,
+  },
+];

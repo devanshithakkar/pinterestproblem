@@ -1,0 +1,350 @@
+{
+  "boards": [
+    {
+      "id": "board-fashion",
+      "name": "Fashion",
+      "description": "Outfits, textures, color stories, and wardrobe inspiration.",
+      "tags": [
+        "fashion",
+        "outfit",
+        "style",
+        "streetwear",
+        "linen",
+        "jewelry",
+        "editorial"
+      ],
+      "aesthetic": "soft editorial styling with warm neutrals and statement details",
+      "createdAt": "2026-05-01T08:00:00.000Z"
+    },
+    {
+      "id": "board-coding",
+      "name": "Coding",
+      "description": "Desk setups, UI ideas, snippets, and developer workflow references.",
+      "tags": [
+        "coding",
+        "developer",
+        "laptop",
+        "terminal",
+        "dashboard",
+        "interface",
+        "workspace"
+      ],
+      "aesthetic": "focused workspaces with crisp contrast and useful interface references",
+      "createdAt": "2026-05-01T08:05:00.000Z"
+    },
+    {
+      "id": "board-recipes",
+      "name": "Recipes",
+      "description": "Food ideas, plated meals, baking notes, and cozy kitchen experiments.",
+      "tags": [
+        "recipe",
+        "food",
+        "kitchen",
+        "breakfast",
+        "dessert",
+        "pasta",
+        "spice"
+      ],
+      "aesthetic": "bright kitchen photography with fresh ingredients and inviting plating",
+      "createdAt": "2026-05-01T08:10:00.000Z"
+    },
+    {
+      "id": "board-decor",
+      "name": "Room Decor",
+      "description": "Interiors, plants, lighting, small spaces, and decor moodboards.",
+      "tags": [
+        "room",
+        "decor",
+        "interior",
+        "plant",
+        "lamp",
+        "sofa",
+        "minimal"
+      ],
+      "aesthetic": "calm interiors with natural light, plants, and tactile materials",
+      "createdAt": "2026-05-01T08:15:00.000Z"
+    }
+  ],
+  "pins": [
+    {
+      "id": "pin-1",
+      "boardId": "board-fashion",
+      "title": "Layered linen weekend outfit",
+      "caption": "neutral linen outfit with gold jewelry and soft street style energy",
+      "tags": "fashion, outfit, linen, jewelry",
+      "imageUrl": "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=900&q=80",
+      "source": "Unsplash",
+      "height": 620,
+      "ai": {
+        "predictedBoardId": "board-fashion",
+        "confidence": 92,
+        "signals": [
+          "outfit",
+          "linen",
+          "jewelry",
+          "style"
+        ]
+      },
+      "createdAt": "2026-05-10T09:30:00.000Z"
+    },
+    {
+      "id": "pin-2",
+      "boardId": "board-coding",
+      "title": "Late night dashboard build",
+      "caption": "developer desk with laptop, terminal, analytics dashboard and focus lighting",
+      "tags": "coding, laptop, terminal, dashboard",
+      "imageUrl": "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=900&q=80",
+      "source": "Unsplash",
+      "height": 520,
+      "ai": {
+        "predictedBoardId": "board-coding",
+        "confidence": 89,
+        "signals": [
+          "developer",
+          "laptop",
+          "terminal",
+          "dashboard"
+        ]
+      },
+      "createdAt": "2026-05-11T12:20:00.000Z"
+    },
+    {
+      "id": "pin-3",
+      "boardId": "board-recipes",
+      "title": "Citrus breakfast bowl",
+      "caption": "fresh breakfast recipe with citrus, yogurt, berries and honey",
+      "tags": "recipe, breakfast, food, fresh",
+      "imageUrl": "https://images.unsplash.com/photo-1490474418585-ba9bad8fd0ea?auto=format&fit=crop&w=900&q=80",
+      "source": "Unsplash",
+      "height": 700,
+      "ai": {
+        "predictedBoardId": "board-recipes",
+        "confidence": 86,
+        "signals": [
+          "breakfast",
+          "recipe",
+          "fresh"
+        ]
+      },
+      "createdAt": "2026-05-12T07:45:00.000Z"
+    },
+    {
+      "id": "pin-4",
+      "boardId": "board-decor",
+      "title": "Window-side plant corner",
+      "caption": "cozy room decor with plants, natural light, lamp and textured rug",
+      "tags": "decor, room, plant, lamp",
+      "imageUrl": "https://images.unsplash.com/photo-1484101403633-562f891dc89a?auto=format&fit=crop&w=900&q=80",
+      "source": "Unsplash",
+      "height": 660,
+      "ai": {
+        "predictedBoardId": "board-decor",
+        "confidence": 91,
+        "signals": [
+          "room",
+          "decor",
+          "plant",
+          "natural light"
+        ]
+      },
+      "createdAt": "2026-05-13T17:15:00.000Z"
+    }
+  ],
+  "corrections": [],
+  "predictionHistory": [
+    {
+      "id": "prediction-mpoc8peq-eun1i6",
+      "predictedBoardId": "board-fashion",
+      "predictedBoardName": "Fashion",
+      "confidence": 45,
+      "signals": [
+        "screenshot",
+        "2026",
+        "222816",
+        "travel"
+      ],
+      "alternatives": [
+        {
+          "boardId": "board-coding",
+          "boardName": "Coding",
+          "confidence": 45,
+          "score": 2
+        },
+        {
+          "boardId": "board-recipes",
+          "boardName": "Recipes",
+          "confidence": 45,
+          "score": 2
+        },
+        {
+          "boardId": "board-decor",
+          "boardName": "Room Decor",
+          "confidence": 45,
+          "score": 2
+        }
+      ],
+      "scores": [
+        {
+          "boardId": "board-fashion",
+          "boardName": "Fashion",
+          "score": 2,
+          "matchedSignals": []
+        },
+        {
+          "boardId": "board-coding",
+          "boardName": "Coding",
+          "score": 2,
+          "matchedSignals": []
+        },
+        {
+          "boardId": "board-recipes",
+          "boardName": "Recipes",
+          "score": 2,
+          "matchedSignals": []
+        },
+        {
+          "boardId": "board-decor",
+          "boardName": "Room Decor",
+          "score": 2,
+          "matchedSignals": []
+        }
+      ],
+      "explanation": "Step 1: read caption and tags. Step 2: compare them with each board's keywords. Step 3: score every board. Step 4: choose the highest score.",
+      "caption": "travel",
+      "tags": "travel,places",
+      "title": "Screenshot 2026 05 25 222816",
+      "fileName": "Screenshot 2026-05-25 222816.png",
+      "createdAt": "2026-05-27T17:28:38.306Z"
+    },
+    {
+      "id": "prediction-mpoc8ka9-i4fo2o",
+      "predictedBoardId": "board-fashion",
+      "predictedBoardName": "Fashion",
+      "confidence": 45,
+      "signals": [
+        "screenshot",
+        "2026",
+        "222816",
+        "travel"
+      ],
+      "alternatives": [
+        {
+          "boardId": "board-coding",
+          "boardName": "Coding",
+          "confidence": 45,
+          "score": 2
+        },
+        {
+          "boardId": "board-recipes",
+          "boardName": "Recipes",
+          "confidence": 45,
+          "score": 2
+        },
+        {
+          "boardId": "board-decor",
+          "boardName": "Room Decor",
+          "confidence": 45,
+          "score": 2
+        }
+      ],
+      "scores": [
+        {
+          "boardId": "board-fashion",
+          "boardName": "Fashion",
+          "score": 2,
+          "matchedSignals": []
+        },
+        {
+          "boardId": "board-coding",
+          "boardName": "Coding",
+          "score": 2,
+          "matchedSignals": []
+        },
+        {
+          "boardId": "board-recipes",
+          "boardName": "Recipes",
+          "score": 2,
+          "matchedSignals": []
+        },
+        {
+          "boardId": "board-decor",
+          "boardName": "Room Decor",
+          "score": 2,
+          "matchedSignals": []
+        }
+      ],
+      "explanation": "Step 1: read caption and tags. Step 2: compare them with each board's keywords. Step 3: score every board. Step 4: choose the highest score.",
+      "caption": "travel",
+      "tags": "travel,places",
+      "title": "Screenshot 2026 05 25 222816",
+      "fileName": "Screenshot 2026-05-25 222816.png",
+      "createdAt": "2026-05-27T17:28:31.665Z"
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "rec-fashion-1",
+      "boardId": "board-fashion",
+      "title": "Monochrome blazer mood",
+      "caption": "tailored blazer, tonal palette, confident editorial styling",
+      "imageUrl": "https://images.unsplash.com/photo-1487222477894-8943e31ef7b2?auto=format&fit=crop&w=900&q=80",
+      "reason": "Matches saved outfit, linen, and editorial fashion signals."
+    },
+    {
+      "id": "rec-fashion-2",
+      "boardId": "board-fashion",
+      "title": "Soft accessory detail",
+      "caption": "minimal jewelry and fabric texture close-up",
+      "imageUrl": "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80",
+      "reason": "Your board favors texture, neutrals, and wearable details."
+    },
+    {
+      "id": "rec-coding-1",
+      "boardId": "board-coding",
+      "title": "Clean code workspace",
+      "caption": "laptop, code editor, focused desk layout",
+      "imageUrl": "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=900&q=80",
+      "reason": "Similar developer desk and interface composition."
+    },
+    {
+      "id": "rec-coding-2",
+      "boardId": "board-coding",
+      "title": "Product dashboard reference",
+      "caption": "analytics dashboard and modern product UI",
+      "imageUrl": "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=900&q=80",
+      "reason": "Connects to saved dashboard and workflow pins."
+    },
+    {
+      "id": "rec-recipes-1",
+      "boardId": "board-recipes",
+      "title": "Fresh pasta prep",
+      "caption": "homemade pasta with herbs and kitchen prep",
+      "imageUrl": "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?auto=format&fit=crop&w=900&q=80",
+      "reason": "Food board leans fresh, bright, and easy to recreate."
+    },
+    {
+      "id": "rec-recipes-2",
+      "boardId": "board-recipes",
+      "title": "Warm dessert notes",
+      "caption": "baked dessert with cinnamon and cozy table styling",
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=900&q=80",
+      "reason": "Adds a cozy dessert branch to your recipe pattern."
+    },
+    {
+      "id": "rec-decor-1",
+      "boardId": "board-decor",
+      "title": "Calm reading nook",
+      "caption": "chair, lamp, plants and natural textiles",
+      "imageUrl": "https://images.unsplash.com/photo-1493663284031-b7e3aefcae8e?auto=format&fit=crop&w=900&q=80",
+      "reason": "Matches plants, warm light, and compact room styling."
+    },
+    {
+      "id": "rec-decor-2",
+      "boardId": "board-decor",
+      "title": "Minimal shelf styling",
+      "caption": "interior shelf decor with books, ceramics and leaves",
+      "imageUrl": "https://images.unsplash.com/photo-1519710164239-da123dc03ef4?auto=format&fit=crop&w=900&q=80",
+      "reason": "Recommended from your natural-material decor direction."
+    }
+  ]
+}
