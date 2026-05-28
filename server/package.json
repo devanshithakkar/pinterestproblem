@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.js",
+    "migrate:supabase": "node scripts/migrateJsonToSupabase.js",
     "start": "node src/index.js"
   },
   "dependencies": {
