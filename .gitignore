@@ -4,3 +4,13 @@ dist
 .DS_Store
 server/data/*.tmp
 npm-debug.log*
+.env
+server/.env
+client/.env
+node_modules
+server/node_modules
+client/node_modules
+dist
+build
+.DS_Store
+supabase/.temp
