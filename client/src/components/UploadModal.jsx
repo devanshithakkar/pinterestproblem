@@ -15,7 +15,8 @@ const emptyForm = {
   height: 580,
 };
 
-const smartSaveSteps = ["Uploading", "Analyzing", "Matching board", "Saving", "Done"];
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const smartSaveSteps = ["Preparing", "Uploading", "Analyzing", "Matching", "Saving", "Done"];
 
 async function compressImageFile(file) {
   if (!file || !file.type.startsWith("image/")) return file;
@@ -96,9 +97,9 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
 
     if (createdBoard) await onBoardCreated?.(createdBoard);
     if (result.action === "auto_save" && savedPin) {
-      setStepIndex(3);
-      await onSaved(savedPin.boardId, savedPin);
       setStepIndex(4);
+      await onSaved(savedPin.boardId, savedPin);
+      setStepIndex(5);
       setSuccess(`Auto-saved to ${decision.predictedBoard?.name || result.predictedBoard?.name || "the best board"}.`);
     }
   }
@@ -106,10 +107,14 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
   async function prepareFile(file) {
     if (!file) return;
     if (busy) return;
+    if (!file.type?.startsWith("image/")) {
+      setError("Choose a JPG, PNG, WebP, or other image file.");
+      return;
+    }
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
     setBusy(true);
-    setBusyLabel("Uploading");
+    setBusyLabel("Preparing image");
     setStepIndex(0);
     setError("");
     setSuccess("");
@@ -117,7 +122,12 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     let stepTimer;
     try {
       const optimizedFile = await compressImageFile(file);
+      if (optimizedFile.size > MAX_UPLOAD_BYTES) {
+        throw new Error("Image is still larger than 8MB after compression. Try a smaller file.");
+      }
       if (requestId !== requestRef.current) return;
+      setBusyLabel("Uploading");
+      setStepIndex(1);
       setForm((current) => ({
         ...current,
         imageUrl: URL.createObjectURL(optimizedFile),
@@ -125,7 +135,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
         source: "Local upload",
       }));
       stepTimer = window.setInterval(() => {
-        setStepIndex((current) => (current >= 0 && current < 2 ? current + 1 : current));
+        setStepIndex((current) => (current >= 1 && current < 3 ? current + 1 : current));
         setBusyLabel((current) => (current === "Uploading" ? "Analyzing" : current === "Analyzing" ? "Matching board" : current));
       }, 1200);
       const result = await api.smartSaveUpload(optimizedFile);
@@ -144,11 +154,11 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
       if (result.action === "auto_save") setBusyLabel("Saving");
       await finishSmartSave(result);
       if (result.action === "confirm") {
-        setStepIndex(2);
+        setStepIndex(3);
         setSuccess("");
       }
       if (result.action === "suggest_new_board") {
-        setStepIndex(2);
+        setStepIndex(3);
         setSuccess("");
       }
     } catch (err) {
@@ -191,7 +201,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
 
     setBusy(true);
     setBusyLabel("Analyzing");
-    setStepIndex(1);
+    setStepIndex(2);
     setError("");
     setSuccess("");
     try {
@@ -202,13 +212,13 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
         source: nextForm.source,
         height: nextForm.height,
       });
-      setStepIndex(2);
+      setStepIndex(3);
       const { decision } = applyAiResult(result);
 
       if (result.action === "auto_save" && result.pin) {
-        setStepIndex(3);
-        await onSaved(result.pin.boardId, result.pin);
         setStepIndex(4);
+        await onSaved(result.pin.boardId, result.pin);
+        setStepIndex(5);
         setSuccess(`Auto-saved to ${decision.predictedBoard.name}.`);
       }
     } catch (err) {
@@ -227,7 +237,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
 
     setBusy(true);
     setBusyLabel("Saving pin");
-    setStepIndex(3);
+    setStepIndex(4);
     setError("");
     try {
       const payload = confirmation?.savePayload || {
@@ -240,9 +250,10 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
         selectedBoardId: boardId,
         analysis: visionAnalysis,
         decision: aiResult,
+        boardKeywords: suggestedBoard.tags || aiResult.suggestedKeywords || visionAnalysis?.detectedTags || [],
       });
       await onSaved(boardId, pin);
-      setStepIndex(4);
+      setStepIndex(5);
       setSuccess(`Saved to ${boards.find((board) => board.id === boardId)?.name || "board"}.`);
     } catch (err) {
       setError(err.message || "Unable to save this pin.");
@@ -257,7 +268,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
 
     setBusy(true);
     setBusyLabel("Creating board");
-    setStepIndex(3);
+    setStepIndex(4);
     setError("");
     try {
       const { board, pin } = await api.aiCreateBoardAndSave({
@@ -272,7 +283,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
       await onBoardCreated?.(board);
       await onSaved(board.id, pin);
       setSelectedBoardId(board.id);
-      setStepIndex(4);
+      setStepIndex(5);
       setSuccess(`Created ${board.name} and saved the image there.`);
     } catch (err) {
       setError(err.message || "Unable to create the suggested board.");
@@ -283,12 +294,12 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/35 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-5xl rounded-[2rem] bg-white p-5 shadow-soft md:p-6">
+    <div className="fixed inset-0 z-50 grid place-items-end overflow-y-auto bg-black/35 p-0 backdrop-blur-sm sm:place-items-center sm:p-4">
+      <div className="max-h-[100dvh] w-full overflow-y-auto rounded-t-[1.6rem] bg-white p-4 shadow-soft sm:max-w-5xl sm:rounded-[2rem] sm:p-5 md:p-6">
         <div className="mb-5 flex items-center justify-between">
           <div>
             <p className="text-xs font-black uppercase text-ember">AI smart save</p>
-            <h2 className="text-2xl font-black">Drop an image and let PinMind organize it</h2>
+            <h2 className="text-xl font-black sm:text-2xl">Drop an image and let PinMind organize it</h2>
           </div>
           <button onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full bg-black/[0.04]">
             <X className="h-5 w-5" />
@@ -300,12 +311,12 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
             <label
               onDragOver={(event) => event.preventDefault()}
               onDrop={handleDrop}
-              className={`grid min-h-72 place-items-center rounded-[1.6rem] border border-dashed border-ember/35 bg-blush p-4 text-center transition hover:border-ember ${
+              className={`grid min-h-56 place-items-center rounded-[1.6rem] border border-dashed border-ember/35 bg-blush p-4 text-center transition hover:border-ember sm:min-h-72 ${
                 busy ? "cursor-wait opacity-80" : "cursor-pointer"
               }`}
             >
               {form.imageUrl ? (
-                <img src={form.imageUrl} alt="Preview" className="max-h-80 rounded-[1.2rem] object-cover shadow-soft" />
+                <img src={form.imageUrl} alt="Preview" loading="lazy" className="max-h-72 rounded-[1.2rem] object-cover shadow-soft sm:max-h-80" />
               ) : (
                 <span>
                   <ImagePlus className="mx-auto mb-3 h-10 w-10 text-ember" />
@@ -351,7 +362,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                     disabled={busy}
                     className="overflow-hidden rounded-2xl ring-1 ring-black/5 transition hover:scale-[1.02] disabled:opacity-50"
                   >
-                    <img src={item.imageUrl} alt={item.title} className="h-24 w-full object-cover" />
+                    <img src={item.imageUrl} alt={item.title} loading="lazy" className="h-24 w-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -376,7 +387,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                 </div>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin text-ember" /> : <Sparkles className="h-5 w-5 text-ember" />}
               </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-5">
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-6">
                 {smartSaveSteps.map((step, index) => (
                   <div
                     key={step}
@@ -418,7 +429,9 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                     <h4 className="mt-1 font-black">{visionAnalysis.title}</h4>
                     <p className="mt-1 text-sm font-semibold leading-6 text-black/55">{visionAnalysis.description}</p>
                     <p className="mt-2 text-xs font-bold text-black/45">
-                      {[visionAnalysis.category, ...(visionAnalysis.style || []), ...(visionAnalysis.mood || [])].filter(Boolean).join(" / ")}
+                      {[visionAnalysis.primaryCategory || visionAnalysis.category, visionAnalysis.primarySubject, ...(visionAnalysis.style || []), ...(visionAnalysis.mood || [])]
+                        .filter(Boolean)
+                        .join(" / ")}
                     </p>
                   </div>
                 ) : null}

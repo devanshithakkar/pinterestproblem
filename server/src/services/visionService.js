@@ -3,11 +3,24 @@ import { Buffer } from "node:buffer";
 const DEFAULT_ANALYSIS = {
   title: "Untitled inspiration",
   description: "AI-analyzed visual inspiration.",
+  primarySubject: "visual inspiration",
+  primaryCategory: "inspiration",
+  secondaryCategories: [],
   detectedTags: [],
+  detectedObjects: [],
   objects: [],
   style: [],
   colors: [],
   mood: [],
+  environment: "unknown",
+  isPerson: false,
+  isAnimal: false,
+  isInterior: false,
+  isFood: false,
+  isFashion: false,
+  isTech: false,
+  isAnimeOrIllustration: false,
+  confidenceNotes: "Vision analysis is unavailable.",
   category: "inspiration",
   suggestedBoardName: null,
   reasoning: "Vision analysis is unavailable, so PinMind used fallback image metadata.",
@@ -38,15 +51,32 @@ function safeJsonFromText(text = "") {
 }
 
 function normalizeVisionAnalysis(value = {}) {
+  const primaryCategory = String(value.primaryCategory || value.category || DEFAULT_ANALYSIS.primaryCategory)
+    .trim()
+    .toLowerCase();
+  const detectedObjects = compactList(value.detectedObjects || value.objects || value.subjects);
   return {
     title: String(value.title || DEFAULT_ANALYSIS.title).trim(),
     description: String(value.description || DEFAULT_ANALYSIS.description).trim(),
+    primarySubject: String(value.primarySubject || detectedObjects[0] || DEFAULT_ANALYSIS.primarySubject).trim(),
+    primaryCategory,
+    secondaryCategories: compactList(value.secondaryCategories || value.categories),
     detectedTags: compactList(value.detectedTags || value.tags),
-    objects: compactList(value.objects || value.subjects),
+    detectedObjects,
+    objects: detectedObjects,
     style: compactList(value.style || value.aesthetic),
     colors: compactList(value.colors),
     mood: compactList(value.mood),
-    category: String(value.category || DEFAULT_ANALYSIS.category).trim().toLowerCase(),
+    environment: String(value.environment || DEFAULT_ANALYSIS.environment).trim().toLowerCase(),
+    isPerson: Boolean(value.isPerson),
+    isAnimal: Boolean(value.isAnimal),
+    isInterior: Boolean(value.isInterior),
+    isFood: Boolean(value.isFood),
+    isFashion: Boolean(value.isFashion),
+    isTech: Boolean(value.isTech),
+    isAnimeOrIllustration: Boolean(value.isAnimeOrIllustration),
+    confidenceNotes: String(value.confidenceNotes || DEFAULT_ANALYSIS.confidenceNotes).trim(),
+    category: primaryCategory,
     suggestedBoardName: value.suggestedBoardName ? String(value.suggestedBoardName).trim() : null,
     reasoning: String(value.reasoning || DEFAULT_ANALYSIS.reasoning).trim(),
   };
@@ -60,16 +90,29 @@ function dataUrlFromBase64(imageBase64, mimeType = "image/jpeg") {
 
 function prompt() {
   return `Analyze this image for a Pinterest-style smart board organizer.
-Return only valid JSON with:
+Return only valid JSON. Do not include markdown. Identify the main subject first and do not over-focus on the background.
+If the image is an animal, pet, person, food, fashion item, tech/UI screenshot, anime character, or illustration, make that the primary category even when the background contains room decor.
+Use the exact JSON shape below:
 {
   "title": "short useful pin title",
   "description": "one sentence visual description",
+  "primarySubject": "the main subject, not the background",
+  "primaryCategory": "animal|pet|wildlife|interior|room decor|food|fashion|tech|coding|ui design|anime|illustration|art|travel|fitness|nature|other",
+  "secondaryCategories": ["other relevant categories"],
+  "detectedObjects": ["main objects or subjects"],
   "detectedTags": ["visual", "tags"],
-  "objects": ["main objects or subjects"],
   "style": ["aesthetic/style words"],
   "colors": ["dominant colors"],
   "mood": ["mood words"],
-  "category": "single broad category",
+  "environment": "where the subject appears, such as studio, home, outdoors, screen, unknown",
+  "isPerson": false,
+  "isAnimal": false,
+  "isInterior": false,
+  "isFood": false,
+  "isFashion": false,
+  "isTech": false,
+  "isAnimeOrIllustration": false,
+  "confidenceNotes": "short note about uncertainty or strong visual evidence",
   "suggestedBoardName": "short board name or null",
   "reasoning": "why these labels fit"
 }
@@ -96,48 +139,82 @@ function mockVisionAnalyzer(input = {}) {
   const words = imageWords(input);
   const groups = [
     {
-      category: "coding",
+      primaryCategory: "coding",
       test: /coding|code|dashboard|laptop|developer|terminal|workspace|interface|analytics|desk/,
       title: "Developer workspace reference",
+      subject: "developer screen setup",
       tags: ["coding", "laptop", "dashboard", "workspace", "interface"],
       objects: ["laptop", "desk", "screen"],
       style: ["productive", "minimal", "technical"],
       colors: ["neutral", "dark", "green"],
       mood: ["focused", "modern"],
       board: "Coding Ideas",
+      flags: { isTech: true },
     },
     {
-      category: "fashion",
+      primaryCategory: "fashion",
       test: /fashion|outfit|dress|streetwear|jewelry|linen|wardrobe|shoe|style/,
       title: "Outfit inspiration",
+      subject: "outfit styling",
       tags: ["fashion", "outfit", "style", "wardrobe", "texture"],
       objects: ["clothing", "accessories"],
       style: ["editorial", "layered"],
       colors: ["neutral"],
       mood: ["confident", "polished"],
       board: "Outfit Ideas",
+      flags: { isFashion: true, isPerson: true },
     },
     {
-      category: "decor",
+      primaryCategory: "interior",
       test: /room|decor|interior|plant|lamp|sofa|bedroom|shelf|rug|lighting/,
       title: "Interior decor inspiration",
+      subject: "interior decor",
       tags: ["decor", "interior", "room", "lighting", "plant"],
       objects: ["furniture", "decor", "lighting"],
       style: ["cozy", "minimal"],
       colors: ["warm", "neutral"],
       mood: ["calm", "homey"],
       board: "Room Decor Ideas",
+      flags: { isInterior: true },
     },
     {
-      category: "food",
+      primaryCategory: "food",
       test: /food|recipe|pasta|tomato|basil|kitchen|breakfast|dessert|plate|baking/,
       title: "Recipe inspiration",
+      subject: "prepared food",
       tags: ["food", "recipe", "plate", "kitchen", "meal"],
       objects: ["dish", "plate", "ingredients"],
       style: ["fresh", "homemade"],
       colors: ["warm", "red", "green"],
       mood: ["cozy", "appetizing"],
       board: "Recipe Ideas",
+      flags: { isFood: true },
+    },
+    {
+      primaryCategory: "animal",
+      test: /animal|pet|cat|dog|puppy|kitten|bird|wildlife|horse|rabbit|cute/,
+      title: "Animal photography",
+      subject: "animal",
+      tags: ["animal", "pet", "wildlife", "cute", "portrait"],
+      objects: ["animal"],
+      style: ["natural", "expressive"],
+      colors: ["mixed"],
+      mood: ["playful", "warm"],
+      board: "Animal Photography",
+      flags: { isAnimal: true },
+    },
+    {
+      primaryCategory: "anime",
+      test: /anime|manga|character|illustration|wallpaper|cartoon|drawing|fanart/,
+      title: "Anime character inspiration",
+      subject: "anime character",
+      tags: ["anime", "illustration", "character", "art", "wallpaper"],
+      objects: ["character", "illustration"],
+      style: ["illustrated", "anime"],
+      colors: ["vibrant"],
+      mood: ["expressive"],
+      board: "Anime Aesthetic",
+      flags: { isAnimeOrIllustration: true },
     },
   ];
 
@@ -146,14 +223,19 @@ function mockVisionAnalyzer(input = {}) {
     return normalizeVisionAnalysis({
       title: match.title,
       description: `The image appears to show ${match.tags.slice(0, 3).join(", ")} inspiration.`,
+      primarySubject: match.subject,
+      primaryCategory: match.primaryCategory,
+      secondaryCategories: match.tags.slice(0, 3),
       detectedTags: match.tags,
-      objects: match.objects,
+      detectedObjects: match.objects,
       style: match.style,
       colors: match.colors,
       mood: match.mood,
-      category: match.category,
+      environment: words.includes("outdoor") ? "outdoors" : "unknown",
       suggestedBoardName: match.board,
+      confidenceNotes: "Mock vision matched strong semantic words from metadata.",
       reasoning: "Mock vision matched semantic words from the image URL or uploaded file name.",
+      ...match.flags,
     });
   }
 
@@ -163,13 +245,17 @@ function mockVisionAnalyzer(input = {}) {
     description: tags.length
       ? `The image appears related to ${tags.slice(0, 4).join(", ")} and may need its own board.`
       : "The image appears to represent a distinct visual idea that may need its own board.",
+    primarySubject: tags[0] || "visual subject",
+    primaryCategory: "other",
+    secondaryCategories: tags.slice(1, 4),
     detectedTags: tags.length ? tags : ["inspiration", "visual", "reference"],
-    objects: tags.slice(0, 3).length ? tags.slice(0, 3) : ["subject"],
+    detectedObjects: tags.slice(0, 3).length ? tags.slice(0, 3) : ["subject"],
     style: ["curated"],
     colors: ["mixed"],
     mood: ["open-ended"],
-    category: "new idea",
+    environment: "unknown",
     suggestedBoardName: tags[0] ? `${tags[0][0].toUpperCase()}${tags[0].slice(1)} Ideas` : "Fresh Ideas",
+    confidenceNotes: "Mock vision found only weak metadata clues.",
     reasoning: "Mock vision could not identify a strong existing category from metadata.",
   });
 }
@@ -211,7 +297,7 @@ async function analyzeWithGemini({ imageUrl, imageBase64, mimeType }) {
   let base64 = imageBase64;
   let mediaType = mimeType || "image/jpeg";
   if (!base64 && imageUrl) {
-    const imageResponse = await fetch(imageUrl);
+    const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(18_000) });
     if (!imageResponse.ok) throw new Error(`Unable to fetch image for Gemini: ${imageResponse.status}`);
     mediaType = imageResponse.headers.get("content-type") || mediaType;
     base64 = Buffer.from(await imageResponse.arrayBuffer()).toString("base64");

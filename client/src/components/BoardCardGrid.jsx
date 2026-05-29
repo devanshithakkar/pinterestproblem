@@ -41,6 +41,7 @@ export default function BoardCardGrid({ boards, activeBoardId, onSelectBoard }) 
                     key={src}
                     src={src}
                     alt=""
+                    loading="lazy"
                     className={`h-full w-full rounded-2xl object-cover shadow-sm transition duration-500 group-hover:scale-[1.03] ${
                       imageIndex === 0 ? "row-span-2" : ""
                     }`}

@@ -59,6 +59,19 @@ img {
   display: block;
 }
 
+@media (max-width: 767px) {
+  button,
+  a,
+  select,
+  input {
+    min-height: 44px;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+}
+
 ::selection {
   color: white;
   background: #c9342a;

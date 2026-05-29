@@ -80,11 +80,24 @@ Vision analysis returns a normalized object:
 {
   "title": "generated pin title",
   "description": "generated visual description",
+  "primarySubject": "main subject, not the background",
+  "primaryCategory": "animal|interior|food|fashion|tech|anime|art|other",
+  "secondaryCategories": [],
+  "detectedObjects": [],
   "detectedTags": [],
   "objects": [],
   "style": [],
   "colors": [],
   "mood": [],
+  "environment": "home|outdoors|screen|studio|unknown",
+  "isPerson": false,
+  "isAnimal": false,
+  "isInterior": false,
+  "isFood": false,
+  "isFashion": false,
+  "isTech": false,
+  "isAnimeOrIllustration": false,
+  "confidenceNotes": "what the model is confident or uncertain about",
   "category": "category",
   "suggestedBoardName": null,
   "reasoning": "why the analysis fits"
@@ -99,19 +112,40 @@ Provider behavior:
 
 After vision analysis, PinMind:
 
-1. Builds an image profile from AI-generated tags, objects, style, colors, mood, and category.
+1. Builds an image profile from the primary subject, primary category, tags, objects, style, colors, mood, environment, and boolean visual flags.
 2. Builds board profiles from board name, description, tags, saved pins, and previous AI prediction signals.
-3. Scores each board.
-4. Returns `auto_save`, `confirm`, or `suggest_new_board`.
-5. Refuses to force weak matches into existing boards.
+3. Scores each board with high weight for primary category and subject, medium weight for detected tags/style/mood, and low weight for colors.
+4. Applies mismatch penalties, such as animal vs room decor, food vs tech, anime vs room decor, and tech/UI vs fashion.
+5. Returns the top 3 candidate boards with scores and rejection reasoning for debugging.
+6. Refuses to force weak matches into existing boards.
 
 Confidence thresholds:
 
 ```text
-confidence >= 0.80       auto_save
-confidence >= 0.50       confirm
-confidence < 0.50        suggest_new_board
+confidence >= 0.82       auto_save
+confidence >= 0.60       confirm
+confidence < 0.60        suggest_new_board
 ```
+
+If the best board has a high category mismatch penalty or no strong category/subject overlap, PinMind forces `suggest_new_board` even when one board has the highest weak score.
+
+## Mobile Support
+
+The app supports desktop and mobile layouts:
+
+- Desktop uses the sidebar plus main workspace.
+- Mobile uses a sticky header, compact board menu, and bottom navigation for Boards, Explore, Overview, AI, and Save.
+- Upload and board creation dialogs become full-screen mobile sheets.
+- Core actions remain reachable on mobile: Explore/search, Smart Save, upload, new board, AI confirmation, create board and save, profile, and logout.
+- Masonry grids use 1 column on small phones, 2 columns on larger mobile/tablet, and 3+ columns on desktop.
+- Images use lazy loading to reduce mobile bandwidth and layout pressure.
+
+Upload limits:
+
+- Client-side compression attempts to resize large images before upload.
+- Images must be under 8MB after compression.
+- Only image MIME types are accepted.
+- The Smart Save upload request times out after 60 seconds with a clear error.
 
 ## API Endpoints
 
@@ -370,6 +404,13 @@ curl -sS "$API_URL/api/pins" \
   -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 ```
 
+Search the image library:
+
+```bash
+curl -sS "$API_URL/api/library/search?q=desk%20setup&provider=all&page=1" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+```
+
 Upload an image:
 
 ```bash
@@ -394,6 +435,14 @@ curl -sS -X POST "$API_URL/api/ai/auto-save" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   -d '{"imageUrl":"https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80","fileName":"coding-dashboard-laptop-workspace.jpg"}'
+```
+
+Smart-save an uploaded file:
+
+```bash
+curl -sS -X POST "$API_URL/api/ai/smart-save-upload" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -F "image=@/absolute/path/to/image.jpg"
 ```
 
 Confirm save:
@@ -466,6 +515,18 @@ curl -sS -X POST "$API_URL/api/pinterest/publish/REPLACE_WITH_PIN_UUID" \
 12. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
 13. Add a Pinterest Board ID to a board and publish one saved pin.
 
+Mobile checks:
+
+1. Open `http://localhost:5173` in a narrow/mobile viewport.
+2. Confirm Google login works and the app waits for auth before showing private boards.
+3. Use the bottom nav to open Boards, Explore, Overview, AI, and Save.
+4. Search Explore and Smart Save an image.
+5. Upload an image and confirm the progress shows Preparing, Uploading, Analyzing, Matching, Saving, and Done.
+6. Test an animal image with no pet board; it should suggest a new animal/pet board instead of Room Decor.
+7. Test an anime character with no anime board; it should suggest Anime Aesthetic or similar.
+8. Test a coding screenshot with a Coding/Tech board; it should save or confirm there.
+9. Refresh and confirm saved data persists.
+
 ## Future Improvements
 
 - Add CLIP/image embeddings for stronger visual similarity.
@@ -476,3 +537,9 @@ curl -sS -X POST "$API_URL/api/pinterest/publish/REPLACE_WITH_PIN_UUID" \
 - Build a real recommendation engine with feedback loops.
 - Add pagination/search for very large boards.
 - Add automated route and component tests.
+
+Known limitations:
+
+- Gemini can still misidentify ambiguous images.
+- Matching improves as boards accumulate saved pins and AI prediction history.
+- Current matching is weighted symbolic scoring; future work should add embeddings/vector similarity for stronger visual understanding.

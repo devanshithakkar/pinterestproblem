@@ -31,6 +31,7 @@ export default function PinCard({
         <img
           src={pin.imageUrl}
           alt={pin.title}
+          loading="lazy"
           className="w-full object-cover transition duration-500 group-hover:scale-105"
           style={{ height: `${Math.min(pin.height || 520, 760)}px` }}
         />

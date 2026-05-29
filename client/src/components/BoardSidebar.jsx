@@ -120,6 +120,7 @@ export default function BoardSidebar({
                   key={src}
                   src={src}
                   alt=""
+                  loading="lazy"
                   className="h-8 w-8 rounded-full border-2 border-white object-cover transition group-hover:scale-110"
                 />
               ))}

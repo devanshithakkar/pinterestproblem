@@ -35,8 +35,8 @@ export default function CreateBoardModal({ onClose, onCreated }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4 backdrop-blur-sm">
-      <form onSubmit={handleSubmit} className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-soft">
+    <div className="fixed inset-0 z-50 grid place-items-end bg-black/35 p-0 backdrop-blur-sm sm:place-items-center sm:p-4">
+      <form onSubmit={handleSubmit} className="max-h-[100dvh] w-full max-w-lg overflow-y-auto rounded-t-[1.6rem] bg-white p-5 shadow-soft sm:rounded-[2rem] sm:p-6">
         <div className="mb-5 flex items-center justify-between">
           <div>
             <p className="text-xs font-black uppercase text-ember">New board</p>

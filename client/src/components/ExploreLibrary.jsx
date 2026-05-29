@@ -66,6 +66,7 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
       suggestedBoard: result.suggestedBoard || {
         name: result.suggestedBoardName || decision.suggestedBoardName,
         description: result.suggestedBoardDescription || decision.suggestedBoardDescription,
+        tags: decision.suggestedKeywords || analysis.detectedTags || [],
       },
       confirmation: result.confirmation || null,
     };
@@ -138,6 +139,7 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
         boardDescription: decisionState.suggestedBoard.description,
         analysis: decisionState.analysis,
         decision: decisionState.decision,
+        boardKeywords: decisionState.suggestedBoard.tags || decisionState.decision?.suggestedKeywords || decisionState.analysis?.detectedTags || [],
       });
       await onBoardCreated?.(board);
       await onSaved(board.id, pin);

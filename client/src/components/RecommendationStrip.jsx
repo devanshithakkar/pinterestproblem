@@ -37,7 +37,7 @@ export default function RecommendationStrip({ recommendations }) {
             key={item.id}
             className="group grid grid-cols-[120px_1fr] overflow-hidden rounded-[1.5rem] bg-white/66 shadow-sm ring-1 ring-white/70 backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift"
           >
-            <img src={item.imageUrl} alt={item.title} className="h-full min-h-40 w-full object-cover" />
+            <img src={item.imageUrl} alt={item.title} loading="lazy" className="h-full min-h-40 w-full object-cover" />
             <div className="space-y-3 p-4">
               <ConfidenceBadge score={item.confidence} compact />
               <div>

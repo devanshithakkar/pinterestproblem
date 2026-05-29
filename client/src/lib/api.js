@@ -74,18 +74,28 @@ async function uploadImage(file) {
 async function smartSaveUpload(file) {
   const formData = new FormData();
   formData.append("image", file);
-  const response = await fetch(apiUrl("/api/ai/smart-save-upload"), {
-    method: "POST",
-    headers: await authHeaders(),
-    body: formData,
-  });
-  const data = await parseResponse(response);
-  if (response.status === 401) {
-    await supabase.auth.signOut();
-    throw new Error(data.message || "Your session expired. Please sign in again.");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 60_000);
+  try {
+    const response = await fetch(apiUrl("/api/ai/smart-save-upload"), {
+      method: "POST",
+      headers: await authHeaders(),
+      body: formData,
+      signal: controller.signal,
+    });
+    const data = await parseResponse(response);
+    if (response.status === 401) {
+      await supabase.auth.signOut();
+      throw new Error(data.message || "Your session expired. Please sign in again.");
+    }
+    if (!response.ok) throw new Error(data.message || "Smart Save failed");
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("Smart Save timed out. Try a smaller image or a stronger connection.");
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
-  if (!response.ok) throw new Error(data.message || "Smart Save failed");
-  return data;
 }
 
 export const api = {

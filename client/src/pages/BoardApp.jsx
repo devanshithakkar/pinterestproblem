@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, Loader2, Menu, Plus, Settings, Sparkles, UploadCloud } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Home,
+  Images,
+  LayoutGrid,
+  Loader2,
+  LogOut,
+  Menu,
+  Plus,
+  Settings,
+  Sparkles,
+  UploadCloud,
+  WandSparkles,
+} from "lucide-react";
 import { api } from "../lib/api";
+import { supabase } from "../lib/supabaseClient";
 import BoardSidebar from "../components/BoardSidebar";
 import BoardCardGrid from "../components/BoardCardGrid";
 import BoardSkeleton from "../components/BoardSkeleton";
@@ -35,6 +50,12 @@ export default function BoardApp({
   const [pinterestMessage, setPinterestMessage] = useState("");
   const [publishingPinId, setPublishingPinId] = useState("");
   const loadRequestId = useRef(0);
+  const mobileNavItems = [
+    { id: "organizer", label: "Boards", icon: Home },
+    { id: "explore", label: "Explore", icon: Images },
+    { id: "overview", label: "Overview", icon: LayoutGrid },
+    { id: "suggestions", label: "AI", icon: WandSparkles },
+  ];
 
   async function loadBoard(boardId = activeBoardId) {
     if (!boardId) return;
@@ -171,6 +192,26 @@ export default function BoardApp({
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <span className="flex items-center gap-2 rounded-2xl bg-white/65 px-2 py-2 shadow-sm ring-1 ring-white/70 lg:hidden">
+                {user?.user_metadata?.avatar_url || user?.user_metadata?.picture ? (
+                  <img
+                    src={user.user_metadata.avatar_url || user.user_metadata.picture}
+                    alt=""
+                    className="h-8 w-8 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-ink text-xs font-black text-white">
+                    {(user?.email || "P")[0].toUpperCase()}
+                  </span>
+                )}
+                <button
+                  onClick={() => supabase.auth.signOut()}
+                  className="grid h-8 w-8 place-items-center rounded-full bg-white/70 text-black/55 hover:bg-blush hover:text-ember"
+                  aria-label="Log out"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </span>
               <button
                 onClick={() => setShowCreateBoard(true)}
                 className="hidden items-center gap-2 rounded-2xl bg-white/70 px-4 py-3 font-black shadow-sm ring-1 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 sm:inline-flex"
@@ -189,6 +230,15 @@ export default function BoardApp({
           </div>
           {mobileBoardsOpen ? (
             <div className="mx-auto mt-4 grid max-w-7xl grid-cols-2 gap-2 sm:grid-cols-4 lg:hidden">
+              <button
+                onClick={() => {
+                  setShowCreateBoard(true);
+                  setMobileBoardsOpen(false);
+                }}
+                className="rounded-2xl border border-dashed border-ember/35 bg-white/70 px-3 py-3 text-left text-sm font-black text-ember shadow-sm ring-1 ring-white/70 backdrop-blur-xl"
+              >
+                + New board
+              </button>
               {boards.map((board) => (
                 <button
                   key={board.id}
@@ -207,7 +257,7 @@ export default function BoardApp({
           ) : null}
         </header>
 
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:pb-6">
           {error || localError ? <div className="mb-4 rounded-2xl bg-blush p-4 font-bold text-ember">{localError || error}</div> : null}
 
           {activeView !== "explore" ? (
@@ -335,6 +385,36 @@ export default function BoardApp({
         />
       ) : null}
       {showCreateBoard ? <CreateBoardModal onClose={() => setShowCreateBoard(false)} onCreated={onBoardCreated} /> : null}
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/82 px-2 py-2 shadow-[0_-16px_50px_rgba(23,20,18,0.12)] backdrop-blur-2xl lg:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+          {mobileNavItems.map((item) => {
+            const Icon = item.icon;
+            const active = activeView === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveView(item.id)}
+                className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[11px] font-black ${
+                  active ? "bg-ink text-white" : "text-black/50"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setShowUpload(true)}
+            className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl bg-ember px-1 text-[11px] font-black text-white"
+          >
+            <UploadCloud className="h-4 w-4" />
+            Save
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }

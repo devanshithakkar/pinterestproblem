@@ -31,6 +31,17 @@ const upload = multer({
   },
 });
 
+function uploadSingleImage(req, res, next) {
+  upload.single("image")(req, res, (error) => {
+    if (!error) return next();
+    const message =
+      error.code === "LIMIT_FILE_SIZE"
+        ? "Images must be 8MB or smaller after compression."
+        : error.message || "Only image uploads are supported.";
+    return res.status(400).json({ message });
+  });
+}
+
 function sendSupabaseReadError(res, resource, error) {
   console.error(`Failed to load ${resource} from Supabase`, error);
   res.status(500).json({ message: `Unable to load ${resource}. Please check the Supabase configuration.` });
@@ -87,11 +98,23 @@ function visionPayloadForBoardMatching(visionAnalysis, body = {}) {
     title: visionAnalysis.title || body.title,
     description: visionAnalysis.description || body.description,
     caption: visionAnalysis.description || body.caption || body.description,
+    primarySubject: visionAnalysis.primarySubject,
+    primaryCategory: visionAnalysis.primaryCategory,
+    secondaryCategories: visionAnalysis.secondaryCategories,
+    detectedObjects: visionAnalysis.detectedObjects || visionAnalysis.objects,
     tags: visionAnalysis.detectedTags || body.tags,
     objects: visionAnalysis.objects,
     style: visionAnalysis.style,
     colors: visionAnalysis.colors,
     mood: visionAnalysis.mood,
+    environment: visionAnalysis.environment,
+    isPerson: visionAnalysis.isPerson,
+    isAnimal: visionAnalysis.isAnimal,
+    isInterior: visionAnalysis.isInterior,
+    isFood: visionAnalysis.isFood,
+    isFashion: visionAnalysis.isFashion,
+    isTech: visionAnalysis.isTech,
+    isAnimeOrIllustration: visionAnalysis.isAnimeOrIllustration,
     category: visionAnalysis.category,
     suggestedBoardName: visionAnalysis.suggestedBoardName,
     source: body.source,
@@ -117,6 +140,7 @@ function normalizeDecision(boardDecision, visionAnalysis) {
     suggestedBoardDescription:
       boardDecision.suggestedBoardDescription ||
       (suggestedBoardName ? `AI-created board for ${visionAnalysis.detectedTags.slice(0, 5).join(", ")} inspiration.` : null),
+    suggestedKeywords: boardDecision.suggestedKeywords || visionAnalysis.detectedTags?.slice(0, 8) || [],
     suggestedTitle: visionAnalysis.title,
     suggestedCaption: visionAnalysis.description,
     scores: boardDecision.scores || [],
@@ -131,10 +155,11 @@ async function analyzeAndDecide(userId, body = {}) {
   if (!imageUrl && !imageBase64) throw new Error("imageUrl or imageBase64 is required.");
 
   const visionAnalysis = await analyzeImageWithVision({ imageUrl, imageBase64, mimeType, fileName });
-  const { boards, pins } = await getAiContextForUser(userId);
+  const { boards, pins, predictions } = await getAiContextForUser(userId);
   const boardDecision = analyzeImageForBoards({
     boards,
     pins,
+    predictions,
     image: visionPayloadForBoardMatching(visionAnalysis, body),
   });
   const decision = normalizeDecision(boardDecision, visionAnalysis);
@@ -187,7 +212,7 @@ function smartSaveResponse({ action, analysis, decision, uploadResult, createdPi
         ? {
             name: decision.suggestedBoardName,
             description: decision.suggestedBoardDescription,
-            tags: analysis.detectedTags?.slice(0, 8) || [],
+            tags: decision.suggestedKeywords || analysis.detectedTags?.slice(0, 8) || [],
           }
         : null,
     image: uploadResult,
@@ -210,7 +235,7 @@ apiRouter.get("/health", (_req, res) => {
 
 apiRouter.use(requireAuth);
 
-apiRouter.post("/uploads/image", upload.single("image"), async (req, res) => {
+apiRouter.post("/uploads/image", uploadSingleImage, async (req, res) => {
   try {
     const userId = req.user.id;
     if (!req.file) return res.status(400).json({ message: "Image file is required." });
@@ -229,7 +254,7 @@ apiRouter.post("/uploads/image", upload.single("image"), async (req, res) => {
   }
 });
 
-apiRouter.post("/ai/smart-save-upload", upload.single("image"), async (req, res) => {
+apiRouter.post("/ai/smart-save-upload", uploadSingleImage, async (req, res) => {
   try {
     const userId = req.user.id;
     if (!req.file) return res.status(400).json({ message: "Image file is required." });
@@ -488,7 +513,7 @@ apiRouter.post("/ai/auto-save", async (req, res) => {
       suggestedBoard: {
         name: decision.suggestedBoardName,
         description: decision.suggestedBoardDescription,
-        tags: analysis.detectedTags.slice(0, 8),
+        tags: decision.suggestedKeywords || analysis.detectedTags.slice(0, 8),
       },
     });
   } catch (error) {
@@ -528,7 +553,7 @@ apiRouter.post("/ai/create-board-and-save", async (req, res) => {
         req.body.boardDescription ||
         req.body.board_description ||
         `AI-created board for ${(analysis.detectedTags || []).slice(0, 5).join(", ")} inspiration.`,
-      tags: analysis.detectedTags || [],
+      tags: req.body.boardKeywords || req.body.board_keywords || analysis.detectedTags || [],
       aesthetic: [...(analysis.style || []), ...(analysis.mood || [])].join(", ") || "AI-generated visual identity",
       coverImageUrl: req.body.imageUrl || req.body.image_url || null,
     });
