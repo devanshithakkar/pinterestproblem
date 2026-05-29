@@ -1,9 +1,10 @@
-import { GalleryVerticalEnd, Home, LayoutGrid, LogOut, Plus, Search, Sparkles, WandSparkles } from "lucide-react";
+import { GalleryVerticalEnd, Home, Images, LayoutGrid, LogOut, Plus, Search, Sparkles, WandSparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
 const navItems = [
   { id: "organizer", label: "Smart organizer", icon: Home, color: "text-white" },
+  { id: "explore", label: "Explore library", icon: Images, color: "text-ember" },
   { id: "overview", label: "Board overview", icon: LayoutGrid, color: "text-ember" },
   { id: "suggestions", label: "AI suggestions", icon: WandSparkles, color: "text-moss" },
 ];

@@ -5,6 +5,7 @@ import BoardSidebar from "../components/BoardSidebar";
 import BoardCardGrid from "../components/BoardCardGrid";
 import BoardSkeleton from "../components/BoardSkeleton";
 import CreateBoardModal from "../components/CreateBoardModal";
+import ExploreLibrary from "../components/ExploreLibrary";
 import MasonryGrid from "../components/MasonryGrid";
 import RecommendationStrip from "../components/RecommendationStrip";
 import UploadModal from "../components/UploadModal";
@@ -104,8 +105,12 @@ export default function BoardApp({
                 <Menu className="h-5 w-5" />
               </button>
               <div className="min-w-0">
-                <p className="truncate text-xs font-black uppercase text-ember">Smart board</p>
-                <h1 className="truncate text-2xl font-black sm:text-4xl">{activeBoard?.name || "Boards"}</h1>
+                <p className="truncate text-xs font-black uppercase text-ember">
+                  {activeView === "explore" ? "Image discovery" : "Smart board"}
+                </p>
+                <h1 className="truncate text-2xl font-black sm:text-4xl">
+                  {activeView === "explore" ? "Explore" : activeBoard?.name || "Boards"}
+                </h1>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -148,35 +153,39 @@ export default function BoardApp({
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
           {error || localError ? <div className="mb-4 rounded-2xl bg-blush p-4 font-bold text-ember">{localError || error}</div> : null}
 
-          <section className="mb-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="glass-panel p-5">
-              <p className="text-sm font-black uppercase text-ember">{activeBoard?.pinCount ?? pins.length} saved pins</p>
-              <h2 className="mt-1 text-3xl font-black">
-                {activeBoard?.description || "Start by exploring images and Smart Saving your first idea."}
-              </h2>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {activeBoard?.tags?.map((tag) => (
-                  <span key={tag} className="rounded-full border border-white/70 bg-white/55 px-3 py-1.5 text-xs font-black text-black/55 shadow-sm backdrop-blur-xl">
-                    {tag}
-                  </span>
-                ))}
+          {activeView !== "explore" ? (
+            <section className="mb-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="glass-panel p-5">
+                <p className="text-sm font-black uppercase text-ember">{activeBoard?.pinCount ?? pins.length} saved pins</p>
+                <h2 className="mt-1 text-3xl font-black">
+                  {activeBoard?.description || "Start by exploring images and Smart Saving your first idea."}
+                </h2>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {activeBoard?.tags?.map((tag) => (
+                    <span key={tag} className="rounded-full border border-white/70 bg-white/55 px-3 py-1.5 text-xs font-black text-black/55 shadow-sm backdrop-blur-xl">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="ai-gradient rounded-[2rem] p-5 text-white shadow-soft">
-              <Sparkles className="mb-4 h-6 w-6 text-marigold" />
-              <p className="text-sm font-bold leading-6 text-white/70">Learning simulation</p>
-              <h3 className="mt-2 text-2xl font-black">Every correction becomes a stronger signal for the next prediction.</h3>
-              <div className="mt-5 grid grid-cols-3 gap-2">
-                {["Caption", "Visual", "History"].map((item) => (
-                  <span key={item} className="rounded-2xl bg-white/12 px-3 py-2 text-center text-xs font-black text-white/80">
-                    {item}
-                  </span>
-                ))}
+              <div className="ai-gradient rounded-[2rem] p-5 text-white shadow-soft">
+                <Sparkles className="mb-4 h-6 w-6 text-marigold" />
+                <p className="text-sm font-bold leading-6 text-white/70">Learning simulation</p>
+                <h3 className="mt-2 text-2xl font-black">Every correction becomes a stronger signal for the next prediction.</h3>
+                <div className="mt-5 grid grid-cols-3 gap-2">
+                  {["Caption", "Visual", "History"].map((item) => (
+                    <span key={item} className="rounded-2xl bg-white/12 px-3 py-2 text-center text-xs font-black text-white/80">
+                      {item}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          ) : null}
 
-          {loadingBoard ? (
+          {activeView === "explore" ? (
+            <ExploreLibrary boards={boards} onSaved={handlePinSaved} onBoardCreated={onBoardCreated} />
+          ) : loadingBoard ? (
             <BoardSkeleton />
           ) : (
             <>

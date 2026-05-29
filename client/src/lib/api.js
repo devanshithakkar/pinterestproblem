@@ -92,6 +92,14 @@ export const api = {
   getBoards: () => request("/api/boards"),
   createBoard: (payload) => request("/api/boards", { method: "POST", body: JSON.stringify(payload) }),
   getBoard: (id) => request(`/api/boards/${id}`),
+  searchLibrary: ({ query, provider = "pexels", page = 1 }) => {
+    const params = new URLSearchParams({
+      q: query || "creative inspiration",
+      provider,
+      page: String(page),
+    });
+    return request(`/api/library/search?${params.toString()}`);
+  },
   uploadImage,
   smartSaveUpload,
   predict: (payload) => request("/api/predict", { method: "POST", body: JSON.stringify(payload) }),
