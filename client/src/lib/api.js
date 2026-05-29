@@ -46,7 +46,10 @@ async function request(path, options = {}) {
     headers: nextHeaders,
   });
   const data = await parseResponse(response);
-  if (response.status === 401) throw new Error(data.message || "Your session expired. Please sign in again.");
+  if (response.status === 401) {
+    await supabase.auth.signOut();
+    throw new Error(data.message || "Your session expired. Please sign in again.");
+  }
   if (!response.ok) throw new Error(data.message || "Request failed");
   return data;
 }
@@ -60,7 +63,10 @@ async function uploadImage(file) {
     body: formData,
   });
   const data = await parseResponse(response);
-  if (response.status === 401) throw new Error(data.message || "Your session expired. Please sign in again.");
+  if (response.status === 401) {
+    await supabase.auth.signOut();
+    throw new Error(data.message || "Your session expired. Please sign in again.");
+  }
   if (!response.ok) throw new Error(data.message || "Upload failed");
   return data;
 }
