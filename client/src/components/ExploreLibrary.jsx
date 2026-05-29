@@ -83,6 +83,8 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
         fileName: `${image.provider}-${image.id}.jpg`,
         title: image.title,
         description: image.description,
+        tags: image.tags || [],
+        providerTags: image.tags || [],
         source: image.provider,
         height: image.height,
       });

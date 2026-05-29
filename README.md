@@ -139,6 +139,22 @@ Autonomous Smart Save is the default upload flow:
 6. Otherwise PinMind creates an AI-named board and saves the pin there.
 7. The UI shows Undo, Move, and Rename Board controls after the save instead of asking the user before saving.
 
+Explore Smart Save also uses provider metadata from Pexels/Unsplash, including title, description, and tags. Before creating a board, the backend maps the image into a controlled category board:
+
+- Animals
+- Nature
+- Anime / Digital Art
+- Movies / Cinema
+- Fashion
+- Coding / Tech
+- Room Decor
+- Food
+- Vehicles
+- Fitness / Sports
+- Architecture / Travel
+
+Generic suggestions such as `Image Idea`, `Image Ideas`, `Untitled Board`, `New Board`, `Smart Save`, and `Misc` are rejected. PinMind first searches the user's existing boards by normalized name and keyword overlap; if a similar board exists, it reuses it. If no category is clear, it uses `Visual Inspiration` once and reuses that board later.
+
 Undo behavior:
 
 - If the image was saved to an existing board, undo deletes the created pin.
@@ -163,6 +179,7 @@ The app supports desktop and mobile layouts:
 - Core actions remain reachable on mobile: Explore/search, Smart Save, upload, new board, AI confirmation, create board and save, profile, and logout.
 - Masonry grids use 1 column on small phones, 2 columns on larger mobile/tablet, and 3+ columns on desktop.
 - Images use lazy loading to reduce mobile bandwidth and layout pressure.
+- Saved pin images open in a fullscreen preview modal with object-contain image display, metadata, tags, backdrop close, focused close button, and Escape-key close.
 
 Upload limits:
 
@@ -604,9 +621,15 @@ curl -sS -X POST "$API_URL/api/pinterest/publish/REPLACE_WITH_PIN_UUID" \
 10. Use Undo after an autonomous save.
 11. Use Move after an autonomous save.
 12. Rename the newly created board after an autonomous save.
-13. Switch to another browser tab, come back, and confirm boards remain visible.
-14. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
-15. Add a Pinterest Board ID to a board and publish one saved pin.
+13. Smart Save an animal image from Explore and confirm Animals is created or reused.
+14. Smart Save another animal image and confirm the same Animals board is reused.
+15. Smart Save a room decor image and confirm Room Decor is used or created.
+16. Smart Save a coding image and confirm Coding / Tech is used or created.
+17. Click a saved pin image and confirm the fullscreen preview opens.
+18. Close the preview with Escape and by clicking the backdrop.
+19. Switch to another browser tab, come back, and confirm boards remain visible.
+20. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
+21. Add a Pinterest Board ID to a board and publish one saved pin.
 
 Mobile checks:
 
@@ -619,7 +642,8 @@ Mobile checks:
 7. Test an anime character with no anime board; it should suggest Anime Aesthetic or similar.
 8. Test a coding screenshot with a Coding/Tech board; it should save there automatically when confidence is strong enough.
 9. Confirm Edit Board, Delete Board, Edit Pin, Move Pin, Delete Pin, Undo, Move, and Rename controls are reachable.
-10. Refresh and confirm saved data persists.
+10. Open a pin preview on a mobile viewport and confirm the image uses fullscreen object-contain layout.
+11. Refresh and confirm saved data persists.
 
 ## Future Improvements
 

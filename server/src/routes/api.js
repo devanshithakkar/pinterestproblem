@@ -88,6 +88,7 @@ function aiImagePayload(body = {}) {
     description: body.description,
     caption: body.caption || body.description,
     tags: body.tags,
+    providerTags: body.providerTags || body.provider_tags,
     dominantColor: body.dominantColor || body.dominant_color,
     source: body.source,
     height: body.height,
@@ -226,6 +227,171 @@ function smartSaveResponse({ action, analysis, decision, uploadResult, createdPi
   };
 }
 
+const genericBoardNames = new Set([
+  "image idea",
+  "image ideas",
+  "untitled",
+  "untitled board",
+  "new board",
+  "smart save",
+  "misc",
+  "miscellaneous",
+  "fresh ideas",
+  "visual inspiration",
+]);
+
+const categoryBoardMap = [
+  {
+    name: "Animals",
+    description: "Animal, pet, and wildlife inspiration saved by PinMind.",
+    keywords: ["animal", "animals", "pet", "pets", "wildlife", "dog", "cat", "bird", "puppy", "kitten", "horse", "rabbit"],
+  },
+  {
+    name: "Nature",
+    description: "Flowers, forests, mountains, beaches, and landscape inspiration.",
+    keywords: ["nature", "flower", "flowers", "forest", "mountain", "beach", "landscape", "outdoors", "garden", "plant", "plants"],
+  },
+  {
+    name: "Anime / Digital Art",
+    description: "Anime, manga, illustration, character art, and digital art inspiration.",
+    keywords: ["anime", "manga", "illustration", "illustrated", "digital", "art", "character", "cartoon", "fanart", "wallpaper"],
+  },
+  {
+    name: "Movies / Cinema",
+    description: "Movie posters, cinematic stills, film scenes, and cinema references.",
+    keywords: ["movie", "movies", "cinema", "film", "poster", "cinematic", "scene", "actor", "actress"],
+  },
+  {
+    name: "Fashion",
+    description: "Outfits, streetwear, accessories, and fashion styling inspiration.",
+    keywords: ["fashion", "outfit", "outfits", "streetwear", "accessories", "style", "dress", "shoe", "wardrobe", "clothing"],
+  },
+  {
+    name: "Coding / Tech",
+    description: "Coding, dashboards, UI screenshots, laptops, and technical workspace ideas.",
+    keywords: ["code", "coding", "tech", "technology", "ui", "dashboard", "laptop", "developer", "screen", "interface", "software"],
+  },
+  {
+    name: "Room Decor",
+    description: "Interior rooms, furniture, decor, lighting, and home styling ideas.",
+    keywords: ["interior", "room", "decor", "furniture", "home", "sofa", "lamp", "bedroom", "living", "shelf"],
+  },
+  {
+    name: "Food",
+    description: "Food, drinks, desserts, recipes, and meal inspiration.",
+    keywords: ["food", "drink", "drinks", "dessert", "recipe", "meal", "plate", "pasta", "breakfast", "kitchen"],
+  },
+  {
+    name: "Vehicles",
+    description: "Cars, bikes, motorcycles, and vehicle design inspiration.",
+    keywords: ["vehicle", "vehicles", "car", "cars", "bike", "bicycle", "motorcycle", "auto", "automotive"],
+  },
+  {
+    name: "Fitness / Sports",
+    description: "Fitness, gym, workout, sports, and active lifestyle inspiration.",
+    keywords: ["sport", "sports", "fitness", "gym", "workout", "training", "yoga", "running", "athlete"],
+  },
+  {
+    name: "Architecture / Travel",
+    description: "Architecture, cities, buildings, travel, and destination inspiration.",
+    keywords: ["architecture", "building", "buildings", "city", "travel", "street", "hotel", "landmark", "urban"],
+  },
+];
+
+function normalizeName(value = "") {
+  return String(value)
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9\s/]+/g, " ")
+    .replace(/\bideas?\b/g, "")
+    .replace(/\binspiration\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function metadataWords(analysis = {}, imageMetadata = {}) {
+  return [
+    analysis.title,
+    analysis.description,
+    analysis.primarySubject,
+    analysis.primaryCategory,
+    analysis.category,
+    analysis.environment,
+    ...(analysis.secondaryCategories || []),
+    ...(analysis.detectedTags || []),
+    ...(analysis.detectedObjects || analysis.objects || []),
+    ...(analysis.style || []),
+    ...(analysis.mood || []),
+    imageMetadata.title,
+    imageMetadata.description,
+    imageMetadata.caption,
+    imageMetadata.fileName,
+    imageMetadata.file_name,
+    imageMetadata.source,
+    ...(Array.isArray(imageMetadata.tags) ? imageMetadata.tags : String(imageMetadata.tags || "").split(",")),
+    ...(Array.isArray(imageMetadata.providerTags) ? imageMetadata.providerTags : String(imageMetadata.providerTags || "").split(",")),
+  ]
+    .join(" ")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2);
+}
+
+function getSuggestedBoardFromAnalysis(analysis = {}, imageMetadata = {}) {
+  const words = metadataWords(analysis, imageMetadata);
+  const wordSet = new Set(words);
+  const scored = categoryBoardMap
+    .map((category) => ({
+      ...category,
+      score: category.keywords.reduce((sum, keyword) => sum + (wordSet.has(keyword) ? 1 : 0), 0),
+    }))
+    .sort((a, b) => b.score - a.score);
+  const requested = normalizeName(analysis.suggestedBoardName || imageMetadata.suggestedBoardName || "");
+  const isGeneric = !requested || genericBoardNames.has(requested);
+  const category = scored[0]?.score > 0 ? scored[0] : null;
+
+  if (category && (isGeneric || scored[0].score >= 1)) {
+    return {
+      name: category.name,
+      description: category.description,
+      keywords: category.keywords.slice(0, 10),
+      rejectedGenericName: isGeneric ? analysis.suggestedBoardName || imageMetadata.suggestedBoardName || null : null,
+    };
+  }
+
+  if (!isGeneric) {
+    return {
+      name: analysis.suggestedBoardName || imageMetadata.suggestedBoardName,
+      description:
+        imageMetadata.boardDescription ||
+        `AI-created board for ${(analysis.detectedTags || words).slice(0, 5).join(", ")} inspiration.`,
+      keywords: [...new Set([...(analysis.detectedTags || []), ...words])].slice(0, 10),
+      rejectedGenericName: null,
+    };
+  }
+
+  return {
+    name: "Visual Inspiration",
+    description: "General visual inspiration that does not fit a more specific category yet.",
+    keywords: ["visual", "inspiration", ...words].slice(0, 10),
+    rejectedGenericName: analysis.suggestedBoardName || imageMetadata.suggestedBoardName || null,
+  };
+}
+
+function findReusableBoard(boards = [], suggestion) {
+  const suggestedName = normalizeName(suggestion.name);
+  const suggestedTokens = new Set(metadataWords({}, { tags: [suggestion.name, ...(suggestion.keywords || [])] }));
+
+  return boards.find((board) => {
+    const boardName = normalizeName(board.name);
+    if (!boardName) return false;
+    if (boardName === suggestedName || boardName.replace(/s$/, "") === suggestedName.replace(/s$/, "")) return true;
+    const boardTokens = new Set(metadataWords({}, { tags: [board.name, board.description, ...(board.tags || [])] }));
+    const overlap = [...suggestedTokens].filter((token) => boardTokens.has(token));
+    return overlap.length >= 2 || (overlap.length >= 1 && (boardName.includes(suggestedName) || suggestedName.includes(boardName)));
+  });
+}
+
 async function createAutonomousSave({ userId, body, analysis, decision, uploadResult = null }) {
   const saveToExisting = decision.predictedBoard?.id && decision.confidence >= 0.78 && decision.action !== "suggest_new_board";
   if (saveToExisting) {
@@ -252,12 +418,40 @@ async function createAutonomousSave({ userId, body, analysis, decision, uploadRe
     };
   }
 
+  const boards = await getBoards(userId);
+  const suggestion = getSuggestedBoardFromAnalysis(analysis, {
+    ...body,
+    suggestedBoardName: decision.suggestedBoardName,
+  });
+  const reusableBoard = findReusableBoard(boards, suggestion);
+
+  if (reusableBoard) {
+    const createdPin = await createPin(userId, pinPayloadFromAi({ body, analysis, decision, boardId: reusableBoard.id }));
+    return {
+      status: 201,
+      payload: {
+        action: "saved_to_existing_board",
+        confidence: decision.confidence,
+        analysis,
+        matchedBoard: reusableBoard,
+        createdBoard: null,
+        createdPin,
+        pin: createdPin,
+        board: reusableBoard,
+        image: uploadResult,
+        reasoning: `Reused existing board "${reusableBoard.name}" because it matched the suggested category "${suggestion.name}".${
+          suggestion.rejectedGenericName ? ` Rejected generic board name "${suggestion.rejectedGenericName}".` : ""
+        }`,
+        rejectedBoards: decision.scores || [],
+        undoTokenOrIds: { pinId: createdPin.id, boardId: createdPin.boardId, createdNewBoard: false },
+      },
+    };
+  }
+
   const board = await createBoard(userId, {
-    name: decision.suggestedBoardName || analysis.suggestedBoardName || `${analysis.primarySubject || "Fresh"} Ideas`,
-    description:
-      decision.suggestedBoardDescription ||
-      `AI-created board for ${(decision.suggestedKeywords || analysis.detectedTags || []).slice(0, 5).join(", ")} inspiration.`,
-    tags: decision.suggestedKeywords || analysis.detectedTags || [],
+    name: suggestion.name,
+    description: suggestion.description || decision.suggestedBoardDescription,
+    tags: suggestion.keywords || decision.suggestedKeywords || analysis.detectedTags || [],
     aesthetic: [...(analysis.style || []), ...(analysis.mood || [])].join(", ") || "AI-generated visual identity",
     coverImageUrl: body.imageUrl || body.image_url || null,
   });
@@ -275,7 +469,9 @@ async function createAutonomousSave({ userId, body, analysis, decision, uploadRe
       pin: createdPin,
       board,
       image: uploadResult,
-      reasoning: decision.reasoning,
+      reasoning: `Created category board "${board.name}" for this image.${
+        suggestion.rejectedGenericName ? ` Rejected generic board name "${suggestion.rejectedGenericName}".` : ""
+      } ${decision.reasoning || ""}`.trim(),
       rejectedBoards: decision.scores || [],
       undoTokenOrIds: { pinId: createdPin.id, boardId: board.id, createdNewBoard: true },
     },

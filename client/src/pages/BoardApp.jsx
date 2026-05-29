@@ -24,6 +24,7 @@ import BoardSkeleton from "../components/BoardSkeleton";
 import CreateBoardModal from "../components/CreateBoardModal";
 import ExploreLibrary from "../components/ExploreLibrary";
 import MasonryGrid from "../components/MasonryGrid";
+import PinPreviewModal from "../components/PinPreviewModal";
 import RecommendationStrip from "../components/RecommendationStrip";
 import UploadModal from "../components/UploadModal";
 
@@ -51,6 +52,7 @@ export default function BoardApp({
   const [savingPinterestBoard, setSavingPinterestBoard] = useState(false);
   const [pinterestMessage, setPinterestMessage] = useState("");
   const [publishingPinId, setPublishingPinId] = useState("");
+  const [previewPin, setPreviewPin] = useState(null);
   const loadRequestId = useRef(0);
   const mobileNavItems = [
     { id: "organizer", label: "Boards", icon: Home },
@@ -449,6 +451,7 @@ export default function BoardApp({
                   onMovePin={movePin}
                   onUpdatePin={updatePinDetails}
                   onDeletePin={deletePin}
+                  onPreviewPin={setPreviewPin}
                   onPublishPinterest={publishPinToPinterest}
                 />
               ) : null}
@@ -477,6 +480,13 @@ export default function BoardApp({
         />
       ) : null}
       {showCreateBoard ? <CreateBoardModal onClose={() => setShowCreateBoard(false)} onCreated={onBoardCreated} /> : null}
+      {previewPin ? (
+        <PinPreviewModal
+          pin={previewPin}
+          boardName={boards.find((board) => board.id === previewPin.boardId)?.name}
+          onClose={() => setPreviewPin(null)}
+        />
+      ) : null}
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/82 px-2 py-2 shadow-[0_-16px_50px_rgba(23,20,18,0.12)] backdrop-blur-2xl lg:hidden">
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1">

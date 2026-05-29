@@ -10,6 +10,7 @@ export default function PinCard({
   onMovePin,
   onUpdatePin,
   onDeletePin,
+  onPreviewPin,
   onPublishPinterest,
 }) {
   const publishing = publishingPinId === pin.id || pin.pinterestPublishStatus === "publishing";
@@ -29,7 +30,12 @@ export default function PinCard({
 
   return (
     <article className="group mb-4 break-inside-avoid overflow-hidden rounded-[1.6rem] border border-white/70 bg-white/62 shadow-sm backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift">
-      <div className="relative overflow-hidden">
+      <button
+        type="button"
+        onClick={() => onPreviewPin?.(pin)}
+        className="relative block w-full overflow-hidden text-left"
+        aria-label={`Preview ${pin.title}`}
+      >
         <img
           src={pin.imageUrl}
           alt={pin.title}
@@ -46,7 +52,7 @@ export default function PinCard({
             </span>
           ) : null}
         </div>
-      </div>
+      </button>
       <div className="space-y-3 p-4">
         <div>
           <h3 className="text-base font-black">{pin.title}</h3>

@@ -9,6 +9,7 @@ export default function MasonryGrid({
   onMovePin,
   onUpdatePin,
   onDeletePin,
+  onPreviewPin,
   onPublishPinterest,
 }) {
   if (!pins.length) {
@@ -33,6 +34,7 @@ export default function MasonryGrid({
           onMovePin={onMovePin}
           onUpdatePin={onUpdatePin}
           onDeletePin={onDeletePin}
+          onPreviewPin={onPreviewPin}
           onPublishPinterest={onPublishPinterest}
         />
       ))}
