@@ -1,4 +1,4 @@
-import { CheckCircle2, ImagePlus, Loader2, Sparkles, Upload, X } from "lucide-react";
+import { CheckCircle2, ImagePlus, Loader2, RotateCcw, Sparkles, Upload, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { quickSaves } from "../data/sampleImages";
@@ -58,6 +58,9 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
   const [stepIndex, setStepIndex] = useState(-1);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [lastSave, setLastSave] = useState(null);
+  const [quickMoveBoardId, setQuickMoveBoardId] = useState("");
+  const [renameBoardName, setRenameBoardName] = useState("");
   const requestRef = useRef(0);
 
   const predictedBoard = useMemo(
@@ -71,11 +74,13 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     const nextAiResult = {
       ...decision,
       action: result.action || decision.action,
+      predictedBoard: result.matchedBoard || result.predictedBoard || decision.predictedBoard,
       detectedTags: analysis.detectedTags || decision.detectedTags || [],
       suggestedTitle: analysis.title || decision.suggestedTitle,
       suggestedCaption: analysis.description || decision.suggestedCaption,
-      reasoning: decision.reasoning || analysis.reasoning,
+      reasoning: result.reasoning || decision.reasoning || analysis.reasoning,
       confidence: result.confidence ?? decision.confidence,
+      confidencePercent: Math.round(((result.confidence ?? decision.confidence) || 0) * 100) || decision.confidencePercent,
     };
     setVisionAnalysis(analysis);
     setAiResult(nextAiResult);
@@ -91,16 +96,35 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
   }
 
   async function finishSmartSave(result) {
-    const { decision } = applyAiResult(result);
+    const normalizedAction =
+      result.action === "saved_to_existing_board"
+        ? "auto_save"
+        : result.action === "created_new_board_and_saved"
+          ? "created_new_board"
+          : result.action;
+    const { decision } = applyAiResult({ ...result, action: normalizedAction });
     const savedPin = result.createdPin || result.pin;
-    const createdBoard = result.createdBoard || result.board;
+    const createdBoard = result.createdBoard || (result.action === "created_new_board_and_saved" ? result.board : null);
+    const targetBoard = createdBoard || result.matchedBoard || result.board || decision.predictedBoard;
 
     if (createdBoard) await onBoardCreated?.(createdBoard);
-    if (result.action === "auto_save" && savedPin) {
+    if (savedPin) {
       setStepIndex(4);
       await onSaved(savedPin.boardId, savedPin);
       setStepIndex(5);
-      setSuccess(`Auto-saved to ${decision.predictedBoard?.name || result.predictedBoard?.name || "the best board"}.`);
+      setLastSave({
+        pin: savedPin,
+        board: targetBoard,
+        createdNewBoard: result.action === "created_new_board_and_saved",
+        undo: result.undoTokenOrIds,
+      });
+      setQuickMoveBoardId(savedPin.boardId);
+      setRenameBoardName(targetBoard?.name || "");
+      setSuccess(
+        result.action === "created_new_board_and_saved"
+          ? `Created ${targetBoard?.name || "a new board"} and saved the image.`
+          : `Saved to ${targetBoard?.name || "the best board"}.`,
+      );
     }
   }
 
@@ -118,6 +142,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     setStepIndex(0);
     setError("");
     setSuccess("");
+    setLastSave(null);
     resetAiState();
     let stepTimer;
     try {
@@ -138,7 +163,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
         setStepIndex((current) => (current >= 1 && current < 3 ? current + 1 : current));
         setBusyLabel((current) => (current === "Uploading" ? "Analyzing" : current === "Analyzing" ? "Matching board" : current));
       }, 1200);
-      const result = await api.smartSaveUpload(optimizedFile);
+      const result = await api.autonomousSaveUpload(optimizedFile);
       window.clearInterval(stepTimer);
       if (requestId !== requestRef.current) return;
       const upload = result.image || {};
@@ -151,16 +176,8 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
         source: "Supabase Storage upload",
         height: 580,
       }));
-      if (result.action === "auto_save") setBusyLabel("Saving");
+      setBusyLabel("Saving");
       await finishSmartSave(result);
-      if (result.action === "confirm") {
-        setStepIndex(3);
-        setSuccess("");
-      }
-      if (result.action === "suggest_new_board") {
-        setStepIndex(3);
-        setSuccess("");
-      }
     } catch (err) {
       setError(err.message || "Unable to smart-save that image.");
     } finally {
@@ -178,6 +195,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     setSelectedBoardId("");
     setShowExistingBoardChoice(false);
     setSuccess("");
+    setLastSave(null);
   }
 
   function handleDrop(event) {
@@ -205,7 +223,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     setError("");
     setSuccess("");
     try {
-      const result = await api.aiAutoSave({
+      const result = await api.aiAutonomousSave({
         imageUrl: nextForm.imageUrl,
         fileName: nextForm.fileName,
         mimeType: nextForm.mimeType,
@@ -213,14 +231,8 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
         height: nextForm.height,
       });
       setStepIndex(3);
-      const { decision } = applyAiResult(result);
-
-      if (result.action === "auto_save" && result.pin) {
-        setStepIndex(4);
-        await onSaved(result.pin.boardId, result.pin);
-        setStepIndex(5);
-        setSuccess(`Auto-saved to ${decision.predictedBoard.name}.`);
-      }
+      setBusyLabel("Saving");
+      await finishSmartSave(result);
     } catch (err) {
       setError(err.message || "Unable to organize this image.");
     } finally {
@@ -287,6 +299,60 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
       setSuccess(`Created ${board.name} and saved the image there.`);
     } catch (err) {
       setError(err.message || "Unable to create the suggested board.");
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
+    }
+  }
+
+  async function undoLastSave() {
+    if (!lastSave?.undo || busy) return;
+    setBusy(true);
+    setBusyLabel("Undoing");
+    setError("");
+    try {
+      await api.undoAutonomousSave(lastSave.undo);
+      await onSaved(null, null);
+      setLastSave(null);
+      setSuccess("Save undone.");
+    } catch (err) {
+      setError(err.message || "Unable to undo this save.");
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
+    }
+  }
+
+  async function moveLastPin() {
+    if (!lastSave?.pin?.id || !quickMoveBoardId || busy) return;
+    setBusy(true);
+    setBusyLabel("Moving");
+    setError("");
+    try {
+      const { pin } = await api.movePin(lastSave.pin.id, quickMoveBoardId);
+      await onSaved(quickMoveBoardId, pin);
+      setLastSave((current) => ({ ...current, pin, board: boards.find((board) => board.id === quickMoveBoardId) || current.board }));
+      setSuccess(`Moved to ${boards.find((board) => board.id === quickMoveBoardId)?.name || "selected board"}.`);
+    } catch (err) {
+      setError(err.message || "Unable to move this pin.");
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
+    }
+  }
+
+  async function renameCreatedBoard() {
+    if (!lastSave?.createdNewBoard || !lastSave.board?.id || !renameBoardName.trim() || busy) return;
+    setBusy(true);
+    setBusyLabel("Renaming");
+    setError("");
+    try {
+      const { board } = await api.updateBoard(lastSave.board.id, { name: renameBoardName });
+      await onBoardCreated?.(board);
+      setLastSave((current) => ({ ...current, board }));
+      setSuccess(`Renamed board to ${board.name}.`);
+    } catch (err) {
+      setError(err.message || "Unable to rename this board.");
     } finally {
       setBusy(false);
       setBusyLabel("");
@@ -373,7 +439,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
             <div className="rounded-[1.5rem] bg-[#fff8f5] p-4 ring-1 ring-ember/15">
               <p className="text-xs font-black uppercase text-ember">No manual tagging</p>
               <p className="mt-2 text-sm font-semibold leading-6 text-black/55">
-                Drop or choose an image and PinMind immediately uploads it, analyzes it, matches it to your boards, and saves or asks for confirmation.
+                Drop or choose an image and PinMind immediately uploads it, analyzes it, matches it to your boards, and saves automatically.
               </p>
             </div>
 
@@ -382,7 +448,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                 <div>
                   <p className="text-xs font-black uppercase text-ember">Automatic Smart Save</p>
                   <p className="mt-1 text-sm font-semibold text-black/55">
-                    {busy ? `${busyLabel}...` : success ? "Smart Save complete." : "Select a file to start. No manual metadata required."}
+                    {busy ? `${busyLabel}...` : success ? "Autonomous save complete." : "Select a file to start. No manual metadata required."}
                   </p>
                 </div>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin text-ember" /> : <Sparkles className="h-5 w-5 text-ember" />}
@@ -416,7 +482,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-xs font-black uppercase text-ember">
-                      {aiResult.action === "auto_save" ? "Auto-saved" : aiResult.action === "confirm" ? "Confirm match" : "New board suggested"}
+                      {aiResult.action === "created_new_board" ? "New board created" : "Auto-saved"}
                     </p>
                     <h3 className="text-xl font-black">{predictedBoard?.name || aiResult.suggestedBoardName || "Fresh board"}</h3>
                   </div>
@@ -443,7 +509,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                   ))}
                 </div>
 
-                {aiResult.action === "confirm" ? (
+                {false && aiResult.action === "confirm" ? (
                   <div className="mt-4 space-y-3">
                     <p className="rounded-2xl bg-blush px-4 py-3 text-sm font-bold text-ember">
                       PinMind is not fully certain. Save only after you confirm the board.
@@ -473,7 +539,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                   </div>
                 ) : null}
 
-                {aiResult.action === "suggest_new_board" && suggestedBoard ? (
+                {false && aiResult.action === "suggest_new_board" && suggestedBoard ? (
                   <div className="mt-4 rounded-2xl bg-blush p-4">
                     <p className="text-xs font-black uppercase text-ember">Suggested board</p>
                     <p className="mt-2 text-sm font-bold text-black/62">
@@ -533,9 +599,61 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
             ) : null}
 
             {success ? (
-              <div className="inline-flex w-full items-center gap-2 rounded-2xl bg-moss px-4 py-3 text-sm font-black text-white">
-                <CheckCircle2 className="h-4 w-4" />
-                {success}
+              <div className="space-y-3 rounded-2xl bg-moss p-4 text-sm font-black text-white">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  {success}
+                </div>
+                {lastSave ? (
+                  <div className="grid gap-2 rounded-2xl bg-white/12 p-3 text-white sm:grid-cols-[auto_1fr_auto] sm:items-center">
+                    <button
+                      type="button"
+                      onClick={undoLastSave}
+                      disabled={busy}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2 text-sm font-black text-ink disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Undo
+                    </button>
+                    <select
+                      value={quickMoveBoardId}
+                      onChange={(event) => setQuickMoveBoardId(event.target.value)}
+                      className="rounded-2xl border border-white/20 bg-white px-3 py-2 text-sm font-black text-ink"
+                    >
+                      {boards.map((board) => (
+                        <option key={board.id} value={board.id}>
+                          {board.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={moveLastPin}
+                      disabled={busy || !quickMoveBoardId || quickMoveBoardId === lastSave.pin.boardId}
+                      className="rounded-2xl bg-ink px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+                    >
+                      Move
+                    </button>
+                    {lastSave.createdNewBoard ? (
+                      <div className="grid gap-2 sm:col-span-3 sm:grid-cols-[1fr_auto]">
+                        <input
+                          value={renameBoardName}
+                          onChange={(event) => setRenameBoardName(event.target.value)}
+                          className="rounded-2xl border border-white/20 bg-white px-3 py-2 text-sm font-black text-ink"
+                          placeholder="Rename new board"
+                        />
+                        <button
+                          type="button"
+                          onClick={renameCreatedBoard}
+                          disabled={busy || !renameBoardName.trim()}
+                          className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-ink disabled:opacity-50"
+                        >
+                          Rename board
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {error ? <div className="rounded-2xl bg-blush px-4 py-3 text-sm font-bold text-ember">{error}</div> : null}

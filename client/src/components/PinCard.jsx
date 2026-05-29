@@ -1,4 +1,4 @@
-import { ArrowRightLeft, CheckCircle2, Send, XCircle } from "lucide-react";
+import { ArrowRightLeft, CheckCircle2, Pencil, Send, Trash2, XCircle } from "lucide-react";
 import ConfidenceBadge from "./ConfidenceBadge";
 
 export default function PinCard({
@@ -8,6 +8,8 @@ export default function PinCard({
   pinterestConfigured,
   publishingPinId,
   onMovePin,
+  onUpdatePin,
+  onDeletePin,
   onPublishPinterest,
 }) {
   const publishing = publishingPinId === pin.id || pin.pinterestPublishStatus === "publishing";
@@ -74,6 +76,24 @@ export default function PinCard({
             ))}
           </select>
         </label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onUpdatePin?.(pin)}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/70 px-3 py-2.5 text-sm font-black text-black/60 shadow-sm ring-1 ring-white/70"
+          >
+            <Pencil className="h-4 w-4" />
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => onDeletePin?.(pin)}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blush px-3 py-2.5 text-sm font-black text-ember shadow-sm"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </button>
+        </div>
         <button
           type="button"
           onClick={() => onPublishPinterest?.(pin.id)}

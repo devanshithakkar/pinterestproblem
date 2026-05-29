@@ -19,13 +19,18 @@ export default function App() {
 
   async function loadBoards(preferredId) {
     setError("");
-    const data = await api.getBoards();
-    setBoards(data.boards);
-    setActiveBoardId((currentId) => {
-      if (preferredId && data.boards.some((board) => board.id === preferredId)) return preferredId;
-      if (currentId && data.boards.some((board) => board.id === currentId)) return currentId;
-      return data.boards[0]?.id || null;
-    });
+    try {
+      const data = await api.getBoards();
+      setBoards(data.boards);
+      setActiveBoardId((currentId) => {
+        if (preferredId && data.boards.some((board) => board.id === preferredId)) return preferredId;
+        if (currentId && data.boards.some((board) => board.id === currentId)) return currentId;
+        return data.boards[0]?.id || null;
+      });
+    } catch (err) {
+      setError(err.message || "Unable to refresh boards.");
+      throw err;
+    }
   }
 
   async function handleBoardCreated(board) {
@@ -55,10 +60,12 @@ export default function App() {
       })
       .finally(() => mounted && setAuthLoading(false));
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
       setSession(nextSession);
-      setBoards([]);
-      setActiveBoardId(null);
+      if (event === "SIGNED_OUT") {
+        setBoards([]);
+        setActiveBoardId(null);
+      }
       setShowApp(Boolean(nextSession));
       if (nextSession?.user) {
         upsertUserProfile(nextSession.user).catch((err) => setAuthError(err.message));
@@ -70,6 +77,30 @@ export default function App() {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    async function refreshOnFocus() {
+      if (document.visibilityState !== "visible") return;
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        setSession(null);
+        return;
+      }
+      setSession(data.session);
+      if (showApp) {
+        loadBoards(activeBoardId).catch((err) => {
+          if (import.meta.env.DEV) console.debug("[PinMind] Focus refresh kept previous boards after error.", err);
+        });
+      }
+    }
+
+    document.addEventListener("visibilitychange", refreshOnFocus);
+    window.addEventListener("focus", refreshOnFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshOnFocus);
+      window.removeEventListener("focus", refreshOnFocus);
+    };
+  }, [activeBoardId, showApp]);
 
   useEffect(() => {
     if (!session) {

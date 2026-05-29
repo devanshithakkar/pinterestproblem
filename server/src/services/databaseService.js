@@ -248,6 +248,11 @@ export async function deleteBoard(userId, boardId) {
   requireValue(userId, "userId");
   requireValue(boardId, "boardId");
 
+  await assertSupabaseResult(
+    await supabaseAdmin.from("pins").delete().eq("user_id", userId).eq("board_id", boardId),
+    "delete board pins",
+  );
+
   const board = assertSupabaseResult(
     await supabaseAdmin.from("boards").delete().eq("user_id", userId).eq("id", boardId).select("id").maybeSingle(),
     "delete board",
@@ -439,6 +444,40 @@ export async function movePin(userId, pinId, boardId) {
   }
 
   return mapPin(pin);
+}
+
+export async function updatePin(userId, pinId, pinData = {}) {
+  requireValue(userId, "userId");
+  requireValue(pinId, "pinId");
+
+  const updates = {};
+  if (pinData.title !== undefined) updates.title = pinData.title?.trim() || "Untitled pin";
+  if (pinData.caption !== undefined || pinData.description !== undefined) {
+    updates.caption = (pinData.caption ?? pinData.description ?? "").trim();
+  }
+  if (pinData.tags !== undefined) updates.tags = normalizeTags(pinData.tags);
+  if (pinData.height !== undefined) updates.height = Number(pinData.height) || 560;
+
+  const pin = assertSupabaseResult(
+    await supabaseAdmin.from("pins").update(updates).eq("user_id", userId).eq("id", pinId).select("*").maybeSingle(),
+    "update pin",
+  );
+
+  if (!pin) throw new Error("Pin not found");
+  return mapPin(pin);
+}
+
+export async function deletePin(userId, pinId) {
+  requireValue(userId, "userId");
+  requireValue(pinId, "pinId");
+
+  const pin = assertSupabaseResult(
+    await supabaseAdmin.from("pins").delete().eq("user_id", userId).eq("id", pinId).select("*").maybeSingle(),
+    "delete pin",
+  );
+
+  if (!pin) throw new Error("Pin not found");
+  return { id: pin.id, boardId: pin.board_id, deleted: true };
 }
 
 export async function savePrediction(pinId, predictionData = {}) {

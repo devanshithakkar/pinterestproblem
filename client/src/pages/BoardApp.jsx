@@ -8,9 +8,11 @@ import {
   Loader2,
   LogOut,
   Menu,
+  Pencil,
   Plus,
   Settings,
   Sparkles,
+  Trash2,
   UploadCloud,
   WandSparkles,
 } from "lucide-react";
@@ -106,6 +108,11 @@ export default function BoardApp({
   }
 
   async function handlePinSaved(boardId, pin) {
+    if (!pin) {
+      setPins([]);
+      await onBoardsChange();
+      return;
+    }
     if (pin?.boardId === boardId) {
       setPins((currentPins) => [pin, ...currentPins.filter((item) => item.id !== pin.id)]);
     }
@@ -119,6 +126,71 @@ export default function BoardApp({
       await refresh(boardId);
     } catch (err) {
       setLocalError(err.message || "Unable to move this pin.");
+    }
+  }
+
+  async function editActiveBoard() {
+    if (!activeBoard) return;
+    const name = window.prompt("Board name", activeBoard.name);
+    if (name === null) return;
+    const description = window.prompt("Board description", activeBoard.description || "") ?? activeBoard.description;
+    const tags = window.prompt("Keywords/tags, comma separated", (activeBoard.tags || []).join(", ")) ?? (activeBoard.tags || []).join(", ");
+    setLocalError("");
+    try {
+      const { board } = await api.updateBoard(activeBoard.id, {
+        name,
+        description,
+        tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+      });
+      await onBoardCreated(board);
+    } catch (err) {
+      setLocalError(err.message || "Unable to update this board.");
+    }
+  }
+
+  async function deleteActiveBoard() {
+    if (!activeBoard) return;
+    const ok = window.confirm(`Delete "${activeBoard.name}" and its pins? This cannot be undone.`);
+    if (!ok) return;
+    setLocalError("");
+    try {
+      await api.deleteBoard(activeBoard.id);
+      setPins([]);
+      await onBoardsChange();
+    } catch (err) {
+      setLocalError(err.message || "Unable to delete this board.");
+    }
+  }
+
+  async function updatePinDetails(pin) {
+    const title = window.prompt("Pin title", pin.title);
+    if (title === null) return;
+    const caption = window.prompt("Pin description", pin.caption || "") ?? pin.caption;
+    const tags = window.prompt("Pin tags, comma separated", (pin.tags || []).join(", ")) ?? (pin.tags || []).join(", ");
+    setLocalError("");
+    try {
+      const { pin: updatedPin } = await api.updatePin(pin.id, {
+        title,
+        caption,
+        tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+      });
+      setPins((currentPins) => currentPins.map((item) => (item.id === updatedPin.id ? updatedPin : item)));
+      await refresh(activeBoardId);
+    } catch (err) {
+      setLocalError(err.message || "Unable to update this pin.");
+    }
+  }
+
+  async function deletePin(pin) {
+    const ok = window.confirm(`Delete "${pin.title}"?`);
+    if (!ok) return;
+    setLocalError("");
+    try {
+      await api.deletePin(pin.id);
+      setPins((currentPins) => currentPins.filter((item) => item.id !== pin.id));
+      await refresh(activeBoardId);
+    } catch (err) {
+      setLocalError(err.message || "Unable to delete this pin.");
     }
   }
 
@@ -274,6 +346,24 @@ export default function BoardApp({
                     </span>
                   ))}
                 </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={editActiveBoard}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white/70 px-4 py-3 text-sm font-black text-black/60 shadow-sm ring-1 ring-white/70"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit Board
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteActiveBoard}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-blush px-4 py-3 text-sm font-black text-ember shadow-sm"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Board
+                  </button>
+                </div>
               </div>
               <div className="ai-gradient rounded-[2rem] p-5 text-white shadow-soft">
                 <Sparkles className="mb-4 h-6 w-6 text-marigold" />
@@ -357,6 +447,8 @@ export default function BoardApp({
                   pinterestConfigured={pinterestConfigured}
                   publishingPinId={publishingPinId}
                   onMovePin={movePin}
+                  onUpdatePin={updatePinDetails}
+                  onDeletePin={deletePin}
                   onPublishPinterest={publishPinToPinterest}
                 />
               ) : null}

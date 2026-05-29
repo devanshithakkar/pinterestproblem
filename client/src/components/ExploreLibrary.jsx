@@ -62,10 +62,10 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
       action: result.action || decision.action,
       analysis,
       decision,
-      predictedBoard: result.predictedBoard || decision.predictedBoard || null,
+      predictedBoard: result.predictedBoard || result.matchedBoard || decision.predictedBoard || null,
       suggestedBoard: result.suggestedBoard || {
-        name: result.suggestedBoardName || decision.suggestedBoardName,
-        description: result.suggestedBoardDescription || decision.suggestedBoardDescription,
+        name: result.suggestedBoardName || result.createdBoard?.name || decision.suggestedBoardName,
+        description: result.suggestedBoardDescription || result.createdBoard?.description || decision.suggestedBoardDescription,
         tags: decision.suggestedKeywords || analysis.detectedTags || [],
       },
       confirmation: result.confirmation || null,
@@ -78,7 +78,7 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
     setDecisionState(null);
     setError("");
     try {
-      const result = await api.aiAutoSave({
+      const result = await api.aiAutonomousSave({
         imageUrl: image.imageUrl,
         fileName: `${image.provider}-${image.id}.jpg`,
         title: image.title,
@@ -90,8 +90,18 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
       setDecisionState(nextDecision);
       setSelectedBoardId(result.confirmation?.boardId || nextDecision.predictedBoard?.id || boards[0]?.id || "");
 
-      if (result.action === "auto_save" && result.pin) {
-        await onSaved(result.pin.boardId, result.pin);
+      if (result.createdBoard) await onBoardCreated?.(result.createdBoard);
+      if (result.createdPin || result.pin) {
+        const pin = result.createdPin || result.pin;
+        await onSaved(pin.boardId, pin);
+        setDecisionState({
+          ...nextDecision,
+          action: "saved",
+          savedMessage:
+            result.action === "created_new_board_and_saved"
+              ? `Created ${(result.createdBoard || result.board)?.name || "a new board"} and saved the image.`
+              : `Saved to ${(result.matchedBoard || result.board)?.name || "the best board"}.`,
+        });
       }
     } catch (err) {
       setError(err.message || "Unable to Smart Save this image.");

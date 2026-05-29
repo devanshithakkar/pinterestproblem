@@ -71,13 +71,13 @@ async function uploadImage(file) {
   return data;
 }
 
-async function smartSaveUpload(file) {
+async function uploadForSmartSave(file, path) {
   const formData = new FormData();
   formData.append("image", file);
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 60_000);
   try {
-    const response = await fetch(apiUrl("/api/ai/smart-save-upload"), {
+    const response = await fetch(apiUrl(path), {
       method: "POST",
       headers: await authHeaders(),
       body: formData,
@@ -98,9 +98,19 @@ async function smartSaveUpload(file) {
   }
 }
 
+async function smartSaveUpload(file) {
+  return uploadForSmartSave(file, "/api/ai/smart-save-upload");
+}
+
+async function autonomousSaveUpload(file) {
+  return uploadForSmartSave(file, "/api/ai/autonomous-save-upload");
+}
+
 export const api = {
   getBoards: () => request("/api/boards"),
   createBoard: (payload) => request("/api/boards", { method: "POST", body: JSON.stringify(payload) }),
+  updateBoard: (boardId, payload) => request(`/api/boards/${boardId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteBoard: (boardId) => request(`/api/boards/${boardId}`, { method: "DELETE" }),
   getBoard: (id) => request(`/api/boards/${id}`),
   searchLibrary: ({ query, provider = "pexels", page = 1 }) => {
     const params = new URLSearchParams({
@@ -112,10 +122,12 @@ export const api = {
   },
   uploadImage,
   smartSaveUpload,
+  autonomousSaveUpload,
   predict: (payload) => request("/api/predict", { method: "POST", body: JSON.stringify(payload) }),
   aiPredictBoard: (payload) => request("/api/ai/predict-board", { method: "POST", body: JSON.stringify(payload) }),
   aiAnalyzeImage: (payload) => request("/api/ai/analyze-image", { method: "POST", body: JSON.stringify(payload) }),
   aiAutoSave: (payload) => request("/api/ai/auto-save", { method: "POST", body: JSON.stringify(payload) }),
+  aiAutonomousSave: (payload) => request("/api/ai/autonomous-save", { method: "POST", body: JSON.stringify(payload) }),
   aiConfirmSave: (payload) => request("/api/ai/confirm-save", { method: "POST", body: JSON.stringify(payload) }),
   aiCreateBoardAndSave: (payload) =>
     request("/api/ai/create-board-and-save", { method: "POST", body: JSON.stringify(payload) }),
@@ -128,7 +140,11 @@ export const api = {
   publishPinterestPin: (pinId, payload = {}) =>
     request(`/api/pinterest/publish/${pinId}`, { method: "POST", body: JSON.stringify(payload) }),
   savePin: (payload) => request("/api/pins", { method: "POST", body: JSON.stringify(payload) }),
+  updatePin: (pinId, payload) => request(`/api/pins/${pinId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deletePin: (pinId) => request(`/api/pins/${pinId}`, { method: "DELETE" }),
   movePin: (pinId, boardId) =>
     request(`/api/pins/${pinId}/board`, { method: "PATCH", body: JSON.stringify({ boardId }) }),
+  undoAutonomousSave: (payload) =>
+    request("/api/ai/undo-autonomous-save", { method: "POST", body: JSON.stringify(payload) }),
   getRecommendations: (boardId) => request(`/api/recommendations/${boardId}`),
 };

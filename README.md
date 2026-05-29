@@ -129,6 +129,30 @@ confidence < 0.60        suggest_new_board
 
 If the best board has a high category mismatch penalty or no strong category/subject overlap, PinMind forces `suggest_new_board` even when one board has the highest weak score.
 
+Autonomous Smart Save is the default upload flow:
+
+1. The user drops or selects an image.
+2. The backend uploads it to Supabase Storage.
+3. Gemini analyzes the primary subject and category.
+4. PinMind compares the image to the signed-in user's board profiles.
+5. If the best board confidence is at least `0.78` and there is no severe mismatch, the pin is saved to that board.
+6. Otherwise PinMind creates an AI-named board and saves the pin there.
+7. The UI shows Undo, Move, and Rename Board controls after the save instead of asking the user before saving.
+
+Undo behavior:
+
+- If the image was saved to an existing board, undo deletes the created pin.
+- If PinMind created a new board and saved the pin there, undo deletes the pin and deletes the new board only when it is empty.
+
+Board deletion behavior: deleting a board also deletes pins in that board. PinMind only performs this for boards owned by the signed-in user.
+
+Tab visibility/session handling:
+
+- When the browser tab becomes visible again, the frontend checks the Supabase session first.
+- If the session is still valid, it refreshes boards without clearing the current UI first.
+- If a refresh fails, the previous boards remain visible and a non-destructive error is shown.
+- Boards are only set to an empty list after the API successfully returns an empty list or the user signs out.
+
 ## Mobile Support
 
 The app supports desktop and mobile layouts:
@@ -157,13 +181,21 @@ All endpoints below except `/api/health` require `Authorization: Bearer <Supabas
 | GET | `/api/boards` | Load Supabase boards |
 | POST | `/api/boards` | Create a Supabase board |
 | GET | `/api/boards/:id` | Load board details, pins, and recommendations |
+| PATCH | `/api/boards/:id` | Edit a board owned by the signed-in user |
+| DELETE | `/api/boards/:id` | Delete a board and its pins |
 | GET | `/api/pins` | Load Supabase pins |
 | POST | `/api/pins` | Create a Supabase pin |
+| PATCH | `/api/pins/:id` | Edit a pin title, description, or tags |
+| DELETE | `/api/pins/:id` | Delete a pin |
 | PATCH | `/api/pins/:id/board` | Move a pin to another board |
 | POST | `/api/uploads/image` | Upload an image to Supabase Storage |
 | POST | `/api/predict` | Legacy prediction endpoint |
 | POST | `/api/ai/predict-board` | New AI board prediction endpoint |
 | POST | `/api/ai/analyze-image` | Run vision analysis and return a board decision |
+| POST | `/api/ai/smart-save` | Autonomous Smart Save from an image URL |
+| POST | `/api/ai/autonomous-save` | Autonomous Smart Save from an image URL |
+| POST | `/api/ai/autonomous-save-upload` | Upload, analyze, auto-place, and save |
+| POST | `/api/ai/undo-autonomous-save` | Undo the most recent autonomous save |
 | POST | `/api/ai/auto-save` | Predict, then auto-save/confirm/suggest |
 | POST | `/api/ai/confirm-save` | Save after a user confirms a board |
 | POST | `/api/ai/create-board-and-save` | Create suggested board and save the pin |
@@ -437,10 +469,19 @@ curl -sS -X POST "$API_URL/api/ai/auto-save" \
   -d '{"imageUrl":"https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80","fileName":"coding-dashboard-laptop-workspace.jpg"}'
 ```
 
+Autonomous Smart Save from an image URL:
+
+```bash
+curl -sS -X POST "$API_URL/api/ai/smart-save" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"imageUrl":"https://images.unsplash.com/photo-1517849845537-4d257902454a?auto=format&fit=crop&w=900&q=80","fileName":"dog-animal-photo.jpg"}'
+```
+
 Smart-save an uploaded file:
 
 ```bash
-curl -sS -X POST "$API_URL/api/ai/smart-save-upload" \
+curl -sS -X POST "$API_URL/api/ai/autonomous-save-upload" \
   -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   -F "image=@/absolute/path/to/image.jpg"
 ```
@@ -472,6 +513,22 @@ curl -sS -X POST "$API_URL/api/boards" \
   -d '{"name":"Tea Rituals","description":"Ceramic teapots, calm tables, and tea moments","tags":["tea","ceramic","ritual"]}'
 ```
 
+Edit a board:
+
+```bash
+curl -sS -X PATCH "$API_URL/api/boards/REPLACE_WITH_BOARD_UUID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"name":"Updated Board","description":"Updated description","tags":["updated","keywords"]}'
+```
+
+Delete a board and its pins:
+
+```bash
+curl -sS -X DELETE "$API_URL/api/boards/REPLACE_WITH_BOARD_UUID" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+```
+
 Create a pin:
 
 ```bash
@@ -479,6 +536,40 @@ curl -sS -X POST "$API_URL/api/pins" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   -d '{"boardId":"REPLACE_WITH_BOARD_UUID","title":"Ceramic tea moment","imageUrl":"https://example.com/tea.jpg","caption":"quiet ceramic teapot","tags":["tea","ceramic"]}'
+```
+
+Edit a pin:
+
+```bash
+curl -sS -X PATCH "$API_URL/api/pins/REPLACE_WITH_PIN_UUID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"title":"Updated pin title","caption":"Updated description","tags":["updated","pin"]}'
+```
+
+Move a pin:
+
+```bash
+curl -sS -X PATCH "$API_URL/api/pins/REPLACE_WITH_PIN_UUID/board" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"boardId":"REPLACE_WITH_TARGET_BOARD_UUID"}'
+```
+
+Delete a pin:
+
+```bash
+curl -sS -X DELETE "$API_URL/api/pins/REPLACE_WITH_PIN_UUID" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+```
+
+Undo an autonomous save:
+
+```bash
+curl -sS -X POST "$API_URL/api/ai/undo-autonomous-save" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"pinId":"REPLACE_WITH_PIN_UUID","boardId":"REPLACE_WITH_BOARD_UUID","createdNewBoard":true}'
 ```
 
 Save a Pinterest Board ID to a PinMind board:
@@ -505,15 +596,17 @@ curl -sS -X POST "$API_URL/api/pinterest/publish/REPLACE_WITH_PIN_UUID" \
 2. Confirm logged-out users see the Google login screen and no boards or pins.
 3. Sign in with Google.
 4. Confirm the user avatar/name appears.
-5. Create a board and refresh; it should persist for that user.
-6. Upload an image, choose a quick-save demo image, or Smart Save from Explore.
-7. Confirm PinMind immediately analyzes the image without requiring manual title, description, tags, or board choice.
-8. Review the generated title, description, tags, style, and confidence.
-9. For high confidence, verify the pin appears immediately in the predicted board.
-10. For medium confidence, accept the suggested board or choose another board.
-11. For low confidence, create the suggested board and verify the saved pin appears there.
-12. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
-13. Add a Pinterest Board ID to a board and publish one saved pin.
+5. Create a board, edit its name/description/tags, refresh, and confirm it persists.
+6. Delete a test board and confirm its pins are removed with it.
+7. Open a board and edit, move, and delete a pin.
+8. Upload an image that matches an existing board and confirm it auto-saves without another click.
+9. Upload an unrelated image and confirm PinMind creates a new board and saves without another click.
+10. Use Undo after an autonomous save.
+11. Use Move after an autonomous save.
+12. Rename the newly created board after an autonomous save.
+13. Switch to another browser tab, come back, and confirm boards remain visible.
+14. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
+15. Add a Pinterest Board ID to a board and publish one saved pin.
 
 Mobile checks:
 
@@ -524,8 +617,9 @@ Mobile checks:
 5. Upload an image and confirm the progress shows Preparing, Uploading, Analyzing, Matching, Saving, and Done.
 6. Test an animal image with no pet board; it should suggest a new animal/pet board instead of Room Decor.
 7. Test an anime character with no anime board; it should suggest Anime Aesthetic or similar.
-8. Test a coding screenshot with a Coding/Tech board; it should save or confirm there.
-9. Refresh and confirm saved data persists.
+8. Test a coding screenshot with a Coding/Tech board; it should save there automatically when confidence is strong enough.
+9. Confirm Edit Board, Delete Board, Edit Pin, Move Pin, Delete Pin, Undo, Move, and Rename controls are reachable.
+10. Refresh and confirm saved data persists.
 
 ## Future Improvements
 
@@ -537,6 +631,7 @@ Mobile checks:
 - Build a real recommendation engine with feedback loops.
 - Add pagination/search for very large boards.
 - Add automated route and component tests.
+- Improve user correction learning from post-save Move/Rename actions.
 
 Known limitations:
 

@@ -10,6 +10,8 @@ import { requireAuth } from "../middleware/auth.js";
 import {
   createBoard,
   createPin,
+  deleteBoard,
+  deletePin,
   getAiTrainingData,
   getBoardWithPins,
   getBoards,
@@ -18,6 +20,7 @@ import {
   movePin,
   savePrediction,
   updateBoard,
+  updatePin,
   updatePinPinterestStatus,
 } from "../services/databaseService.js";
 
@@ -223,6 +226,62 @@ function smartSaveResponse({ action, analysis, decision, uploadResult, createdPi
   };
 }
 
+async function createAutonomousSave({ userId, body, analysis, decision, uploadResult = null }) {
+  const saveToExisting = decision.predictedBoard?.id && decision.confidence >= 0.78 && decision.action !== "suggest_new_board";
+  if (saveToExisting) {
+    const createdPin = await createPin(
+      userId,
+      pinPayloadFromAi({ body, analysis, decision, boardId: decision.predictedBoard.id }),
+    );
+    return {
+      status: 201,
+      payload: {
+        action: "saved_to_existing_board",
+        confidence: decision.confidence,
+        analysis,
+        matchedBoard: decision.predictedBoard,
+        createdBoard: null,
+        createdPin,
+        pin: createdPin,
+        board: decision.predictedBoard,
+        image: uploadResult,
+        reasoning: decision.reasoning,
+        rejectedBoards: decision.scores || [],
+        undoTokenOrIds: { pinId: createdPin.id, boardId: createdPin.boardId, createdNewBoard: false },
+      },
+    };
+  }
+
+  const board = await createBoard(userId, {
+    name: decision.suggestedBoardName || analysis.suggestedBoardName || `${analysis.primarySubject || "Fresh"} Ideas`,
+    description:
+      decision.suggestedBoardDescription ||
+      `AI-created board for ${(decision.suggestedKeywords || analysis.detectedTags || []).slice(0, 5).join(", ")} inspiration.`,
+    tags: decision.suggestedKeywords || analysis.detectedTags || [],
+    aesthetic: [...(analysis.style || []), ...(analysis.mood || [])].join(", ") || "AI-generated visual identity",
+    coverImageUrl: body.imageUrl || body.image_url || null,
+  });
+  const createdPin = await createPin(userId, pinPayloadFromAi({ body, analysis, decision, boardId: board.id }));
+
+  return {
+    status: 201,
+    payload: {
+      action: "created_new_board_and_saved",
+      confidence: decision.confidence,
+      analysis,
+      matchedBoard: null,
+      createdBoard: board,
+      createdPin,
+      pin: createdPin,
+      board,
+      image: uploadResult,
+      reasoning: decision.reasoning,
+      rejectedBoards: decision.scores || [],
+      undoTokenOrIds: { pinId: createdPin.id, boardId: board.id, createdNewBoard: true },
+    },
+  };
+}
+
 async function getLegacyRecommendationsForBoard(board) {
   const db = await readDb();
   const legacyBoard = db.boards.find((item) => item.name.toLowerCase() === board.name.toLowerCase());
@@ -319,6 +378,66 @@ apiRouter.post("/ai/smart-save-upload", uploadSingleImage, async (req, res) => {
   }
 });
 
+apiRouter.post("/ai/autonomous-save-upload", uploadSingleImage, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!req.file) return res.status(400).json({ message: "Image file is required." });
+
+    console.log(`[AI] Autonomous save upload started for user ${userId}: ${req.file.originalname}`);
+    const uploadResult = await uploadImageBuffer({
+      buffer: req.file.buffer,
+      userId,
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype,
+    });
+    const body = {
+      imageUrl: uploadResult.imageUrl,
+      fileName: req.file.originalname,
+      mimeType: uploadResult.mimeType || req.file.mimetype,
+      storagePath: uploadResult.storagePath,
+      source: "Autonomous Smart Save",
+      height: Number(req.body.height) || 580,
+    };
+    const { analysis, decision } = await analyzeAndDecide(userId, body);
+    const result = await createAutonomousSave({ userId, body, analysis, decision, uploadResult });
+    console.log(`[AI] Autonomous save ${result.payload.action} confidence=${Math.round((decision.confidence || 0) * 100)}`);
+    res.status(result.status).json(result.payload);
+  } catch (error) {
+    console.error("Failed to autonomous-save uploaded image", error);
+    res.status(500).json({ message: error.message || "Unable to autonomous-save this image." });
+  }
+});
+
+apiRouter.post("/ai/autonomous-save", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const body = aiImagePayload(req.body);
+    if (!body.imageUrl) return res.status(400).json({ message: "imageUrl is required." });
+
+    const { analysis, decision } = await analyzeAndDecide(userId, body);
+    const result = await createAutonomousSave({ userId, body, analysis, decision });
+    res.status(result.status).json(result.payload);
+  } catch (error) {
+    console.error("Failed to autonomous-save image", error);
+    res.status(500).json({ message: error.message || "Unable to autonomous-save this image." });
+  }
+});
+
+apiRouter.post("/ai/smart-save", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const body = aiImagePayload(req.body);
+    if (!body.imageUrl) return res.status(400).json({ message: "imageUrl is required." });
+
+    const { analysis, decision } = await analyzeAndDecide(userId, body);
+    const result = await createAutonomousSave({ userId, body, analysis, decision });
+    res.status(result.status).json(result.payload);
+  } catch (error) {
+    console.error("Failed to smart-save image", error);
+    res.status(500).json({ message: error.message || "Unable to smart-save this image." });
+  }
+});
+
 apiRouter.get("/library/search", async (req, res) => {
   const query = String(req.query.q || "creative inspiration").trim() || "creative inspiration";
   const provider = String(req.query.provider || "pexels").toLowerCase();
@@ -378,6 +497,28 @@ apiRouter.post("/boards", async (req, res, next) => {
     res.status(201).json({ board });
   } catch (error) {
     sendSupabaseWriteError(res, "board", error);
+  }
+});
+
+apiRouter.patch("/boards/:id", async (req, res) => {
+  try {
+    const board = await updateBoard(req.user.id, req.params.id, req.body);
+    res.json({ board });
+  } catch (error) {
+    if (error.message === "Board not found") return res.status(404).json({ message: "Board not found" });
+    console.error("Failed to update board", error);
+    res.status(500).json({ message: "Unable to update this board." });
+  }
+});
+
+apiRouter.delete("/boards/:id", async (req, res) => {
+  try {
+    const result = await deleteBoard(req.user.id, req.params.id);
+    res.json(result);
+  } catch (error) {
+    if (error.message === "Board not found") return res.status(404).json({ message: "Board not found" });
+    console.error("Failed to delete board", error);
+    res.status(500).json({ message: "Unable to delete this board." });
   }
 });
 
@@ -569,6 +710,30 @@ apiRouter.post("/ai/create-board-and-save", async (req, res) => {
   }
 });
 
+apiRouter.post("/ai/undo-autonomous-save", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const pinId = req.body.pinId || req.body.pin_id;
+    const boardId = req.body.boardId || req.body.board_id;
+    const createdNewBoard = Boolean(req.body.createdNewBoard ?? req.body.created_new_board);
+    if (!pinId) return res.status(400).json({ message: "pinId is required." });
+
+    const deletedPin = await deletePin(userId, pinId);
+    let deletedBoard = null;
+    if (createdNewBoard && boardId) {
+      const { pins } = await getBoardWithPins(userId, boardId);
+      if (!pins.length) deletedBoard = await deleteBoard(userId, boardId);
+    }
+    res.json({ undone: true, deletedPin, deletedBoard });
+  } catch (error) {
+    if (error.message === "Pin not found" || error.message === "Board not found") {
+      return res.status(404).json({ message: error.message });
+    }
+    console.error("Failed to undo autonomous save", error);
+    res.status(500).json({ message: error.message || "Unable to undo this save." });
+  }
+});
+
 apiRouter.post("/pins", async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -613,6 +778,28 @@ apiRouter.patch("/pins/:id/board", async (req, res, next) => {
 
     console.error("Failed to move pin in Supabase", error);
     res.status(500).json({ message: "Unable to move pin. Please try again." });
+  }
+});
+
+apiRouter.patch("/pins/:id", async (req, res) => {
+  try {
+    const pin = await updatePin(req.user.id, req.params.id, req.body);
+    res.json({ pin });
+  } catch (error) {
+    if (error.message === "Pin not found") return res.status(404).json({ message: "Pin not found" });
+    console.error("Failed to update pin", error);
+    res.status(500).json({ message: "Unable to update this pin." });
+  }
+});
+
+apiRouter.delete("/pins/:id", async (req, res) => {
+  try {
+    const result = await deletePin(req.user.id, req.params.id);
+    res.json(result);
+  } catch (error) {
+    if (error.message === "Pin not found") return res.status(404).json({ message: "Pin not found" });
+    console.error("Failed to delete pin", error);
+    res.status(500).json({ message: "Unable to delete this pin." });
   }
 });
 
