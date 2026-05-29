@@ -1,5 +1,5 @@
-import { CheckCircle2, ImagePlus, Loader2, Sparkles, Upload, WandSparkles, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CheckCircle2, ImagePlus, Loader2, Sparkles, Upload, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { quickSaves } from "../data/sampleImages";
 import ConfidenceBadge from "./ConfidenceBadge";
@@ -15,6 +15,35 @@ const emptyForm = {
   height: 580,
 };
 
+const smartSaveSteps = ["Uploading", "Analyzing", "Matching board", "Saving", "Done"];
+
+async function compressImageFile(file) {
+  if (!file || !file.type.startsWith("image/")) return file;
+  if (file.size < 1_500_000) return file;
+
+  try {
+    const image = await createImageBitmap(file);
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+    if (scale >= 1) return file;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(image.width * scale);
+    canvas.height = Math.round(image.height * scale);
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, file.type === "image/png" ? "image/png" : "image/jpeg", 0.82));
+    if (!blob || blob.size >= file.size) return file;
+    const extension = file.type === "image/png" ? "png" : "jpg";
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "pinmind-upload";
+    return new File([blob], `${baseName}-optimized.${extension}`, { type: blob.type || file.type });
+  } catch (error) {
+    console.warn("Image compression skipped.", error);
+    return file;
+  }
+}
+
 export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }) {
   const [form, setForm] = useState(emptyForm);
   const [visionAnalysis, setVisionAnalysis] = useState(null);
@@ -25,35 +54,107 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
   const [showExistingBoardChoice, setShowExistingBoardChoice] = useState(false);
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("");
+  const [stepIndex, setStepIndex] = useState(-1);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const requestRef = useRef(0);
 
   const predictedBoard = useMemo(
     () => boards.find((board) => board.id === aiResult?.predictedBoard?.id) || aiResult?.predictedBoard,
     [boards, aiResult],
   );
 
+  function applyAiResult(result) {
+    const analysis = result.analysis || {};
+    const decision = result.decision || result.prediction || {};
+    const nextAiResult = {
+      ...decision,
+      action: result.action || decision.action,
+      detectedTags: analysis.detectedTags || decision.detectedTags || [],
+      suggestedTitle: analysis.title || decision.suggestedTitle,
+      suggestedCaption: analysis.description || decision.suggestedCaption,
+      reasoning: decision.reasoning || analysis.reasoning,
+      confidence: result.confidence ?? decision.confidence,
+    };
+    setVisionAnalysis(analysis);
+    setAiResult(nextAiResult);
+    setConfirmation(result.confirmation || null);
+    setSuggestedBoard(result.suggestedBoard || {
+      name: result.suggestedBoardName,
+      description: result.suggestedBoardDescription,
+      tags: analysis.detectedTags?.slice(0, 8) || [],
+    });
+    setSelectedBoardId(result.confirmation?.boardId || decision.predictedBoard?.id || result.predictedBoard?.id || "");
+    setShowExistingBoardChoice(false);
+    return { analysis, decision: nextAiResult };
+  }
+
+  async function finishSmartSave(result) {
+    const { decision } = applyAiResult(result);
+    const savedPin = result.createdPin || result.pin;
+    const createdBoard = result.createdBoard || result.board;
+
+    if (createdBoard) await onBoardCreated?.(createdBoard);
+    if (result.action === "auto_save" && savedPin) {
+      setStepIndex(3);
+      await onSaved(savedPin.boardId, savedPin);
+      setStepIndex(4);
+      setSuccess(`Auto-saved to ${decision.predictedBoard?.name || result.predictedBoard?.name || "the best board"}.`);
+    }
+  }
+
   async function prepareFile(file) {
     if (!file) return;
+    if (busy) return;
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
     setBusy(true);
-    setBusyLabel("Uploading image");
+    setBusyLabel("Uploading");
+    setStepIndex(0);
     setError("");
     setSuccess("");
+    resetAiState();
+    let stepTimer;
     try {
-      const upload = await api.uploadImage(file);
+      const optimizedFile = await compressImageFile(file);
+      if (requestId !== requestRef.current) return;
       setForm((current) => ({
         ...current,
-        imageUrl: upload.imageUrl,
-        fileName: file.name,
-        mimeType: upload.mimeType,
+        imageUrl: URL.createObjectURL(optimizedFile),
+        fileName: optimizedFile.name,
+        source: "Local upload",
+      }));
+      stepTimer = window.setInterval(() => {
+        setStepIndex((current) => (current >= 0 && current < 2 ? current + 1 : current));
+        setBusyLabel((current) => (current === "Uploading" ? "Analyzing" : current === "Analyzing" ? "Matching board" : current));
+      }, 1200);
+      const result = await api.smartSaveUpload(optimizedFile);
+      window.clearInterval(stepTimer);
+      if (requestId !== requestRef.current) return;
+      const upload = result.image || {};
+      setForm((current) => ({
+        ...current,
+        imageUrl: upload.imageUrl || current.imageUrl,
+        fileName: optimizedFile.name,
+        mimeType: upload.mimeType || optimizedFile.type,
         storagePath: upload.storagePath,
         source: "Supabase Storage upload",
         height: 580,
       }));
-      resetAiState();
+      if (result.action === "auto_save") setBusyLabel("Saving");
+      await finishSmartSave(result);
+      if (result.action === "confirm") {
+        setStepIndex(2);
+        setSuccess("");
+      }
+      if (result.action === "suggest_new_board") {
+        setStepIndex(2);
+        setSuccess("");
+      }
     } catch (err) {
-      setError(err.message || "Unable to prepare that image.");
+      setError(err.message || "Unable to smart-save that image.");
     } finally {
+      if (stepTimer) window.clearInterval(stepTimer);
       setBusy(false);
       setBusyLabel("");
     }
@@ -78,44 +179,36 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     setForm(item);
     setError("");
     resetAiState();
+    organizeWithAi(item);
   }
 
-  async function organizeWithAi() {
-    if (!form.imageUrl) {
+  async function organizeWithAi(nextForm = form) {
+    if (!nextForm.imageUrl) {
       setError("Choose an image or paste an image URL first.");
       return;
     }
+    if (busy) return;
 
     setBusy(true);
-    setBusyLabel("AI is analyzing");
+    setBusyLabel("Analyzing");
+    setStepIndex(1);
     setError("");
     setSuccess("");
     try {
       const result = await api.aiAutoSave({
-        imageUrl: form.imageUrl,
-        fileName: form.fileName,
-        mimeType: form.mimeType,
-        source: form.source,
-        height: form.height,
+        imageUrl: nextForm.imageUrl,
+        fileName: nextForm.fileName,
+        mimeType: nextForm.mimeType,
+        source: nextForm.source,
+        height: nextForm.height,
       });
-      const analysis = result.analysis || {};
-      const decision = result.decision || result.prediction || {};
-      const nextAiResult = {
-        ...decision,
-        detectedTags: analysis.detectedTags || decision.detectedTags || [],
-        suggestedTitle: analysis.title || decision.suggestedTitle,
-        suggestedCaption: analysis.description || decision.suggestedCaption,
-        reasoning: decision.reasoning || analysis.reasoning,
-      };
-      setVisionAnalysis(analysis);
-      setAiResult(nextAiResult);
-      setConfirmation(result.confirmation || null);
-      setSuggestedBoard(result.suggestedBoard || null);
-      setSelectedBoardId(result.confirmation?.boardId || decision.predictedBoard?.id || "");
-      setShowExistingBoardChoice(false);
+      setStepIndex(2);
+      const { decision } = applyAiResult(result);
 
       if (result.action === "auto_save" && result.pin) {
+        setStepIndex(3);
         await onSaved(result.pin.boardId, result.pin);
+        setStepIndex(4);
         setSuccess(`Auto-saved to ${decision.predictedBoard.name}.`);
       }
     } catch (err) {
@@ -134,6 +227,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
 
     setBusy(true);
     setBusyLabel("Saving pin");
+    setStepIndex(3);
     setError("");
     try {
       const payload = confirmation?.savePayload || {
@@ -148,6 +242,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
         decision: aiResult,
       });
       await onSaved(boardId, pin);
+      setStepIndex(4);
       setSuccess(`Saved to ${boards.find((board) => board.id === boardId)?.name || "board"}.`);
     } catch (err) {
       setError(err.message || "Unable to save this pin.");
@@ -162,6 +257,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
 
     setBusy(true);
     setBusyLabel("Creating board");
+    setStepIndex(3);
     setError("");
     try {
       const { board, pin } = await api.aiCreateBoardAndSave({
@@ -176,6 +272,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
       await onBoardCreated?.(board);
       await onSaved(board.id, pin);
       setSelectedBoardId(board.id);
+      setStepIndex(4);
       setSuccess(`Created ${board.name} and saved the image there.`);
     } catch (err) {
       setError(err.message || "Unable to create the suggested board.");
@@ -203,7 +300,9 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
             <label
               onDragOver={(event) => event.preventDefault()}
               onDrop={handleDrop}
-              className="grid min-h-72 cursor-pointer place-items-center rounded-[1.6rem] border border-dashed border-ember/35 bg-blush p-4 text-center transition hover:border-ember"
+              className={`grid min-h-72 place-items-center rounded-[1.6rem] border border-dashed border-ember/35 bg-blush p-4 text-center transition hover:border-ember ${
+                busy ? "cursor-wait opacity-80" : "cursor-pointer"
+              }`}
             >
               {form.imageUrl ? (
                 <img src={form.imageUrl} alt="Preview" className="max-h-80 rounded-[1.2rem] object-cover shadow-soft" />
@@ -216,17 +315,27 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                   </span>
                 </span>
               )}
-              <input type="file" accept="image/*" className="hidden" onChange={(event) => prepareFile(event.target.files?.[0])} />
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={busy}
+                onChange={(event) => prepareFile(event.target.files?.[0])}
+              />
             </label>
 
             <label className="block text-sm font-black">
-              Image URL
+              Image URL <span className="font-semibold text-black/40">(optional quick test)</span>
               <input
                 value={form.imageUrl.startsWith("data:") ? "" : form.imageUrl}
                 onChange={(event) => {
                   setForm({ ...form, imageUrl: event.target.value, source: "Image URL" });
                   resetAiState();
                 }}
+                onBlur={() => {
+                  if (form.imageUrl && !busy && !aiResult) organizeWithAi();
+                }}
+                disabled={busy}
                 className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 outline-none focus:border-ember"
                 placeholder="https://..."
               />
@@ -236,7 +345,12 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
               <p className="mb-2 text-sm font-black">Try a quick save</p>
               <div className="grid grid-cols-3 gap-2">
                 {quickSaves.map((item) => (
-                  <button key={item.title} onClick={() => useQuickSave(item)} className="overflow-hidden rounded-2xl ring-1 ring-black/5 transition hover:scale-[1.02]">
+                  <button
+                    key={item.title}
+                    onClick={() => useQuickSave(item)}
+                    disabled={busy}
+                    className="overflow-hidden rounded-2xl ring-1 ring-black/5 transition hover:scale-[1.02] disabled:opacity-50"
+                  >
                     <img src={item.imageUrl} alt={item.title} className="h-24 w-full object-cover" />
                   </button>
                 ))}
@@ -248,18 +362,43 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
             <div className="rounded-[1.5rem] bg-[#fff8f5] p-4 ring-1 ring-ember/15">
               <p className="text-xs font-black uppercase text-ember">No manual tagging</p>
               <p className="mt-2 text-sm font-semibold leading-6 text-black/55">
-                PinMind generates the title, description, tags, style, colors, and board decision from the image. Image URLs are still supported for quick testing.
+                Drop or choose an image and PinMind immediately uploads it, analyzes it, matches it to your boards, and saves or asks for confirmation.
               </p>
             </div>
 
-            <button
-              onClick={organizeWithAi}
-              disabled={busy || !form.imageUrl}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-ink px-5 py-3 font-black text-white disabled:opacity-45"
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}
-              {busy ? busyLabel : "Analyze and organize"}
-            </button>
+            <div className="rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-black/5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase text-ember">Automatic Smart Save</p>
+                  <p className="mt-1 text-sm font-semibold text-black/55">
+                    {busy ? `${busyLabel}...` : success ? "Smart Save complete." : "Select a file to start. No manual metadata required."}
+                  </p>
+                </div>
+                {busy ? <Loader2 className="h-5 w-5 animate-spin text-ember" /> : <Sparkles className="h-5 w-5 text-ember" />}
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-5">
+                {smartSaveSteps.map((step, index) => (
+                  <div
+                    key={step}
+                    className={`rounded-2xl px-3 py-2 text-center text-[11px] font-black ${
+                      stepIndex >= index ? "bg-ember text-white" : "bg-blush text-black/45"
+                    }`}
+                  >
+                    {step}
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => organizeWithAi()}
+                disabled={busy || !form.imageUrl}
+                className="sr-only"
+                aria-hidden="true"
+                tabIndex={-1}
+              >
+                Debug analyze
+              </button>
+            </div>
 
             {aiResult ? (
               <div className="rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-black/5">

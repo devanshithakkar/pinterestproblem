@@ -71,11 +71,29 @@ async function uploadImage(file) {
   return data;
 }
 
+async function smartSaveUpload(file) {
+  const formData = new FormData();
+  formData.append("image", file);
+  const response = await fetch(apiUrl("/api/ai/smart-save-upload"), {
+    method: "POST",
+    headers: await authHeaders(),
+    body: formData,
+  });
+  const data = await parseResponse(response);
+  if (response.status === 401) {
+    await supabase.auth.signOut();
+    throw new Error(data.message || "Your session expired. Please sign in again.");
+  }
+  if (!response.ok) throw new Error(data.message || "Smart Save failed");
+  return data;
+}
+
 export const api = {
   getBoards: () => request("/api/boards"),
   createBoard: (payload) => request("/api/boards", { method: "POST", body: JSON.stringify(payload) }),
   getBoard: (id) => request(`/api/boards/${id}`),
   uploadImage,
+  smartSaveUpload,
   predict: (payload) => request("/api/predict", { method: "POST", body: JSON.stringify(payload) }),
   aiPredictBoard: (payload) => request("/api/ai/predict-board", { method: "POST", body: JSON.stringify(payload) }),
   aiAnalyzeImage: (payload) => request("/api/ai/analyze-image", { method: "POST", body: JSON.stringify(payload) }),

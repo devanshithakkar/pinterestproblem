@@ -168,6 +168,31 @@ function pinPayloadFromAi({ body, analysis, decision, boardId }) {
   };
 }
 
+function smartSaveResponse({ action, analysis, decision, uploadResult, createdPin = null, createdBoard = null }) {
+  return {
+    action,
+    confidence: decision.confidence,
+    analysis,
+    decision,
+    predictedBoard: decision.predictedBoard || null,
+    suggestedBoardName: decision.suggestedBoardName || null,
+    suggestedBoardDescription: decision.suggestedBoardDescription || null,
+    suggestedBoard:
+      action === "suggest_new_board"
+        ? {
+            name: decision.suggestedBoardName,
+            description: decision.suggestedBoardDescription,
+            tags: analysis.detectedTags?.slice(0, 8) || [],
+          }
+        : null,
+    image: uploadResult,
+    createdPin,
+    createdBoard,
+    pin: createdPin,
+    board: createdBoard,
+  };
+}
+
 async function getLegacyRecommendationsForBoard(board) {
   const db = await readDb();
   const legacyBoard = db.boards.find((item) => item.name.toLowerCase() === board.name.toLowerCase());
@@ -196,6 +221,71 @@ apiRouter.post("/uploads/image", upload.single("image"), async (req, res) => {
   } catch (error) {
     console.error("Failed to upload image", error);
     res.status(500).json({ message: error.message || "Unable to upload this image." });
+  }
+});
+
+apiRouter.post("/ai/smart-save-upload", upload.single("image"), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!req.file) return res.status(400).json({ message: "Image file is required." });
+
+    console.log(`[AI] Smart-save upload started for user ${userId}: ${req.file.originalname}`);
+    const uploadResult = await uploadImageBuffer({
+      buffer: req.file.buffer,
+      userId,
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype,
+    });
+
+    const body = {
+      imageUrl: uploadResult.imageUrl,
+      fileName: req.file.originalname,
+      mimeType: uploadResult.mimeType || req.file.mimetype,
+      storagePath: uploadResult.storagePath,
+      source: "Supabase Storage upload",
+      height: Number(req.body.height) || 580,
+    };
+    const { analysis, decision } = await analyzeAndDecide(userId, body);
+    console.log(`[AI] Smart-save upload decision action=${decision.action} confidence=${decision.confidencePercent}`);
+
+    if (decision.action === "auto_save" && decision.predictedBoard?.id) {
+      const createdPin = await createPin(
+        userId,
+        pinPayloadFromAi({ body, analysis, decision, boardId: decision.predictedBoard.id }),
+      );
+      return res.status(201).json(
+        smartSaveResponse({
+          action: "auto_save",
+          analysis,
+          decision,
+          uploadResult,
+          createdPin,
+        }),
+      );
+    }
+
+    await savePrediction(null, {
+      ...decision,
+      userId,
+      predictedBoardId: decision.predictedBoard?.id,
+      selectedBoardId: null,
+      inputTitle: analysis.title,
+      inputCaption: analysis.description,
+      inputTags: analysis.detectedTags,
+      inputFileName: req.file.originalname,
+    });
+
+    return res.json(
+      smartSaveResponse({
+        action: decision.action,
+        analysis,
+        decision,
+        uploadResult,
+      }),
+    );
+  } catch (error) {
+    console.error("Failed to smart-save uploaded image", error);
+    res.status(500).json({ message: error.message || "Unable to smart-save this image." });
   }
 });
 
