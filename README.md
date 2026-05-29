@@ -14,6 +14,10 @@ Users can save an image URL, choose a quick-save demo image, or upload a local f
 
 Boards build a lightweight visual identity from saved pins, tags, captions, and previous AI prediction signals. Each board can also show recommendation cards that match its saved aesthetic.
 
+## Privacy Policy
+
+See [PRIVACY.md](PRIVACY.md) for the PinMind privacy policy template covering Google login, Supabase storage, AI image analysis, Pexels/Unsplash discovery, and user-scoped data.
+
 ## Architecture
 
 ```text
@@ -36,6 +40,7 @@ pinterestproblem-main/
         aiService.js        board matching and confidence decision logic
         visionService.js    OpenAI/Gemini/mock image analysis
         storageService.js   Supabase Storage upload helper
+        pinterestService.js Pinterest publishing helper
 ```
 
 ## Data Source
@@ -129,6 +134,9 @@ All endpoints below except `/api/health` require `Authorization: Bearer <Supabas
 | POST | `/api/ai/confirm-save` | Save after a user confirms a board |
 | POST | `/api/ai/create-board-and-save` | Create suggested board and save the pin |
 | GET | `/api/recommendations/:boardId` | Load board recommendations |
+| GET | `/api/pinterest/status` | Check whether backend Pinterest publishing is configured |
+| PATCH | `/api/boards/:boardId/pinterest` | Save a Pinterest Board ID for a PinMind board |
+| POST | `/api/pinterest/publish/:pinId` | Publish a saved PinMind pin to Pinterest |
 
 ## Environment Variables
 
@@ -146,6 +154,8 @@ GEMINI_API_KEY=
 GEMINI_VISION_MODEL=gemini-2.5-flash
 PEXELS_API_KEY=
 UNSPLASH_ACCESS_KEY=
+PINTEREST_ACCESS_TOKEN=
+PINTEREST_API_BASE=https://api.pinterest.com/v5
 ```
 
 Frontend, in `client/.env` locally and the frontend Vercel project:
@@ -167,6 +177,7 @@ VITE_API_BASE_URL=https://your-backend-vercel-url
 Never add `SUPABASE_SERVICE_ROLE_KEY` to the frontend project.
 Never add `OPENAI_API_KEY` or `GEMINI_API_KEY` to the frontend project.
 Never add `PEXELS_API_KEY` or `UNSPLASH_ACCESS_KEY` to the frontend project.
+Never add `PINTEREST_ACCESS_TOKEN` to the frontend project.
 
 ## Image Library Providers
 
@@ -183,6 +194,28 @@ Supported providers:
 - `provider=all`
 
 Pexels and Unsplash are optional backend-only providers. If a provider key is missing or the provider request fails, PinMind falls back to mock discovery images. The frontend never calls Pexels or Unsplash directly; it only calls the PinMind backend.
+
+## Pinterest Publishing
+
+Pinterest publishing is optional and backend-only. Put the Pinterest token in `server/.env` for local development and in the backend Vercel project for production:
+
+```text
+PINTEREST_ACCESS_TOKEN=
+PINTEREST_API_BASE=https://api.pinterest.com/v5
+```
+
+Do not put the token in `client/.env`, Vite variables, frontend code, or any public repository file.
+
+The Pinterest app/token needs permission to create pins. Use `pins:write`; add `boards:read` if you later build a Pinterest board picker or validator.
+
+Publishing flow:
+
+1. Open a PinMind board.
+2. Paste the matching Pinterest Board ID into the `Pinterest Board ID` field.
+3. Save the board setting.
+4. Use `Publish to Pinterest` on a saved pin card.
+
+If `PINTEREST_ACCESS_TOKEN` is missing, PinMind keeps working normally and the UI shows Pinterest publishing as disabled.
 
 ## Local Setup
 
@@ -274,6 +307,8 @@ Environment variables:
   GEMINI_VISION_MODEL
   PEXELS_API_KEY
   UNSPLASH_ACCESS_KEY
+  PINTEREST_ACCESS_TOKEN
+  PINTEREST_API_BASE
 ```
 
 Frontend project:
@@ -397,6 +432,24 @@ curl -sS -X POST "$API_URL/api/pins" \
   -d '{"boardId":"REPLACE_WITH_BOARD_UUID","title":"Ceramic tea moment","imageUrl":"https://example.com/tea.jpg","caption":"quiet ceramic teapot","tags":["tea","ceramic"]}'
 ```
 
+Save a Pinterest Board ID to a PinMind board:
+
+```bash
+curl -sS -X PATCH "$API_URL/api/boards/REPLACE_WITH_BOARD_UUID/pinterest" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"pinterestBoardId":"REPLACE_WITH_PINTEREST_BOARD_ID"}'
+```
+
+Publish a saved PinMind pin to Pinterest:
+
+```bash
+curl -sS -X POST "$API_URL/api/pinterest/publish/REPLACE_WITH_PIN_UUID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{}'
+```
+
 ## Frontend Test Flow
 
 1. Open `http://localhost:5173`.
@@ -404,13 +457,14 @@ curl -sS -X POST "$API_URL/api/pins" \
 3. Sign in with Google.
 4. Confirm the user avatar/name appears.
 5. Create a board and refresh; it should persist for that user.
-6. Upload an image, choose a quick-save image, or paste an image URL.
-7. Click `Analyze and organize`.
+6. Upload an image, choose a quick-save demo image, or Smart Save from Explore.
+7. Confirm PinMind immediately analyzes the image without requiring manual title, description, tags, or board choice.
 8. Review the generated title, description, tags, style, and confidence.
 9. For high confidence, verify the pin appears immediately in the predicted board.
 10. For medium confidence, accept the suggested board or choose another board.
 11. For low confidence, create the suggested board and verify the saved pin appears there.
 12. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
+13. Add a Pinterest Board ID to a board and publish one saved pin.
 
 ## Future Improvements
 
@@ -418,7 +472,7 @@ curl -sS -X POST "$API_URL/api/pins" \
 - Store image embeddings per pin and aggregate board embeddings.
 - Add private Storage buckets with signed URLs for stricter image privacy.
 - Move to private Supabase Storage buckets with signed URLs.
-- Add Pinterest API publishing and import workflows.
+- Add Pinterest board import and picker workflows.
 - Build a real recommendation engine with feedback loops.
 - Add pagination/search for very large boards.
 - Add automated route and component tests.

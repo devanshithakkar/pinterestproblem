@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Menu, Plus, Sparkles, UploadCloud } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Menu, Plus, Settings, Sparkles, UploadCloud } from "lucide-react";
 import { api } from "../lib/api";
 import BoardSidebar from "../components/BoardSidebar";
 import BoardCardGrid from "../components/BoardCardGrid";
@@ -29,6 +29,11 @@ export default function BoardApp({
   const [mobileBoardsOpen, setMobileBoardsOpen] = useState(false);
   const [localError, setLocalError] = useState("");
   const [activeView, setActiveView] = useState("organizer");
+  const [pinterestConfigured, setPinterestConfigured] = useState(false);
+  const [pinterestBoardId, setPinterestBoardId] = useState("");
+  const [savingPinterestBoard, setSavingPinterestBoard] = useState(false);
+  const [pinterestMessage, setPinterestMessage] = useState("");
+  const [publishingPinId, setPublishingPinId] = useState("");
   const loadRequestId = useRef(0);
 
   async function loadBoard(boardId = activeBoardId) {
@@ -54,6 +59,26 @@ export default function BoardApp({
     loadBoard();
   }, [activeBoardId]);
 
+  useEffect(() => {
+    let mounted = true;
+    api
+      .getPinterestStatus()
+      .then((data) => {
+        if (mounted) setPinterestConfigured(Boolean(data.configured));
+      })
+      .catch(() => {
+        if (mounted) setPinterestConfigured(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setPinterestBoardId(activeBoard?.pinterestBoardId || "");
+    setPinterestMessage("");
+  }, [activeBoard?.id, activeBoard?.pinterestBoardId]);
+
   async function refresh(preferredBoardId = activeBoardId) {
     await onBoardsChange(preferredBoardId);
     await loadBoard(preferredBoardId);
@@ -73,6 +98,38 @@ export default function BoardApp({
       await refresh(boardId);
     } catch (err) {
       setLocalError(err.message || "Unable to move this pin.");
+    }
+  }
+
+  async function savePinterestBoardId() {
+    if (!activeBoard?.id || savingPinterestBoard) return;
+    setSavingPinterestBoard(true);
+    setLocalError("");
+    setPinterestMessage("");
+    try {
+      const data = await api.updateBoardPinterest(activeBoard.id, pinterestBoardId);
+      await onBoardCreated(data.board);
+      setPinterestMessage("Pinterest board ID saved.");
+    } catch (err) {
+      setLocalError(err.message || "Unable to save Pinterest board settings.");
+    } finally {
+      setSavingPinterestBoard(false);
+    }
+  }
+
+  async function publishPinToPinterest(pinId) {
+    if (publishingPinId) return;
+    setPublishingPinId(pinId);
+    setLocalError("");
+    try {
+      const data = await api.publishPinterestPin(pinId);
+      setPins((currentPins) => currentPins.map((pin) => (pin.id === pinId ? data.pin : pin)));
+      await refresh(activeBoardId);
+    } catch (err) {
+      setLocalError(err.message || "Unable to publish this pin to Pinterest.");
+      await loadBoard(activeBoardId);
+    } finally {
+      setPublishingPinId("");
     }
   }
 
@@ -183,6 +240,56 @@ export default function BoardApp({
             </section>
           ) : null}
 
+          {activeView !== "explore" && activeBoard ? (
+            <section className="mb-6 rounded-[2rem] border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur-xl">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-4 w-4 text-ember" />
+                    <p className="text-xs font-black uppercase text-ember">Pinterest publishing</p>
+                    {pinterestConfigured ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-1 text-[11px] font-black text-moss">
+                        <CheckCircle2 className="h-3 w-3" />
+                        configured
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-black/5 px-2 py-1 text-[11px] font-black text-black/45">
+                        coming soon
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-black/55">
+                    Add the matching Pinterest Board ID for this PinMind board, then publish saved pins from their cards.
+                  </p>
+                </div>
+                <div className="flex w-full flex-col gap-2 sm:flex-row lg:max-w-xl">
+                  <input
+                    value={pinterestBoardId}
+                    onChange={(event) => setPinterestBoardId(event.target.value)}
+                    placeholder="Pinterest Board ID"
+                    className="min-w-0 flex-1 rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-ember"
+                    disabled={!pinterestConfigured || savingPinterestBoard}
+                  />
+                  <button
+                    type="button"
+                    onClick={savePinterestBoardId}
+                    disabled={!pinterestConfigured || savingPinterestBoard}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft disabled:translate-y-0 disabled:bg-black/10 disabled:text-black/35 disabled:shadow-none"
+                  >
+                    {savingPinterestBoard ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Save
+                  </button>
+                </div>
+              </div>
+              {pinterestMessage ? <p className="mt-3 text-sm font-bold text-moss">{pinterestMessage}</p> : null}
+              {!pinterestConfigured ? (
+                <p className="mt-3 text-sm font-bold text-black/45">
+                  Pinterest publishing is disabled until the backend has `PINTEREST_ACCESS_TOKEN` configured.
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
           {activeView === "explore" ? (
             <ExploreLibrary boards={boards} onSaved={handlePinSaved} onBoardCreated={onBoardCreated} />
           ) : loadingBoard ? (
@@ -192,7 +299,17 @@ export default function BoardApp({
               {activeView === "organizer" || activeView === "overview" ? (
                 <BoardCardGrid boards={boards} activeBoardId={activeBoardId} onSelectBoard={onSelectBoard} />
               ) : null}
-              {activeView === "organizer" ? <MasonryGrid pins={pins} boards={boards} onMovePin={movePin} /> : null}
+              {activeView === "organizer" ? (
+                <MasonryGrid
+                  pins={pins}
+                  boards={boards}
+                  activeBoard={activeBoard}
+                  pinterestConfigured={pinterestConfigured}
+                  publishingPinId={publishingPinId}
+                  onMovePin={movePin}
+                  onPublishPinterest={publishPinToPinterest}
+                />
+              ) : null}
               {activeView === "organizer" || activeView === "suggestions" ? (
                 <RecommendationStrip recommendations={recommendations} />
               ) : null}

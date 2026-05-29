@@ -1,6 +1,14 @@
 import PinCard from "./PinCard";
 
-export default function MasonryGrid({ pins, boards, onMovePin }) {
+export default function MasonryGrid({
+  pins,
+  boards,
+  activeBoard,
+  pinterestConfigured,
+  publishingPinId,
+  onMovePin,
+  onPublishPinterest,
+}) {
   if (!pins.length) {
     return (
       <div className="rounded-[2rem] border border-dashed border-black/15 bg-white p-10 text-center">
@@ -13,7 +21,16 @@ export default function MasonryGrid({ pins, boards, onMovePin }) {
   return (
     <div className="columns-1 gap-4 sm:columns-2 xl:columns-3 2xl:columns-4">
       {pins.map((pin) => (
-        <PinCard key={pin.id} pin={pin} boards={boards} onMovePin={onMovePin} />
+        <PinCard
+          key={pin.id}
+          pin={pin}
+          boards={boards}
+          activeBoard={activeBoard}
+          pinterestConfigured={pinterestConfigured}
+          publishingPinId={publishingPinId}
+          onMovePin={onMovePin}
+          onPublishPinterest={onPublishPinterest}
+        />
       ))}
     </div>
   );
