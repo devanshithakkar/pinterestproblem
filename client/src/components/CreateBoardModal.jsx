@@ -5,21 +5,33 @@ import { api } from "../lib/api";
 export default function CreateBoardModal({ onClose, onCreated }) {
   const [form, setForm] = useState({ name: "", description: "", tags: "" });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (!form.name.trim()) {
+      setError("Board name is required.");
+      return;
+    }
+
     setSaving(true);
-    const { board } = await api.createBoard({
-      name: form.name,
-      description: form.description,
-      tags: form.tags
-        .split(",")
-        .map((tag) => tag.trim().toLowerCase())
-        .filter(Boolean),
-    });
-    await onCreated(board.id);
-    setSaving(false);
-    onClose();
+    setError("");
+    try {
+      const { board } = await api.createBoard({
+        name: form.name,
+        description: form.description,
+        tags: form.tags
+          .split(",")
+          .map((tag) => tag.trim().toLowerCase())
+          .filter(Boolean),
+      });
+      await onCreated(board);
+      onClose();
+    } catch (err) {
+      setError(err.message || "Unable to create this board.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -64,6 +76,7 @@ export default function CreateBoardModal({ onClose, onCreated }) {
             />
           </label>
         </div>
+        {error ? <div className="mt-4 rounded-2xl bg-blush px-4 py-3 text-sm font-bold text-ember">{error}</div> : null}
         <button disabled={saving} className="mt-6 w-full rounded-2xl bg-ember px-5 py-3 font-black text-white shadow-lift disabled:opacity-60">
           {saving ? "Creating..." : "Create board"}
         </button>

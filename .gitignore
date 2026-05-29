@@ -5,6 +5,7 @@ dist
 server/data/*.tmp
 npm-debug.log*
 .env
+*.local
 server/.env
 client/.env
 node_modules

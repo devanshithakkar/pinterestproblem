@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "buildCommand": "echo \"No build step\"",
+  "builds": [
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { ArrowRight, BrainCircuit, Image, LayoutDashboard, Sparkles } from "lucide-react";
+import { ArrowRight, BrainCircuit, Image, LayoutDashboard, LogOut, Sparkles } from "lucide-react";
+import { supabase } from "../lib/supabaseClient";
 
 const heroImages = [
   "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=700&q=80",
@@ -9,7 +10,10 @@ const heroImages = [
   "https://images.unsplash.com/photo-1519710164239-da123dc03ef4?auto=format&fit=crop&w=700&q=80",
 ];
 
-export default function LandingPage({ onEnter, boards }) {
+export default function LandingPage({ onEnter, boards, user }) {
+  const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
+  const displayName = user?.user_metadata?.full_name || user?.email?.split("@")[0];
+
   return (
     <motion.main
       initial={{ opacity: 0 }}
@@ -22,9 +26,20 @@ export default function LandingPage({ onEnter, boards }) {
           <span className="grid h-11 w-11 place-items-center rounded-2xl bg-ember text-lg font-black text-white shadow-lift">P</span>
           <span className="text-xl font-black">PinMind</span>
         </button>
-        <button onClick={onEnter} className="rounded-full bg-ink px-5 py-3 text-sm font-black text-white shadow-soft hover:-translate-y-0.5">
-          Open app
-        </button>
+        <div className="flex items-center gap-2">
+          {avatarUrl ? <img src={avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white" /> : null}
+          <span className="hidden max-w-36 truncate text-sm font-black text-black/55 sm:inline">{displayName}</span>
+          <button onClick={onEnter} className="rounded-full bg-ink px-5 py-3 text-sm font-black text-white shadow-soft hover:-translate-y-0.5">
+            Open app
+          </button>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="grid h-11 w-11 place-items-center rounded-full bg-white/60 text-black/55 shadow-sm ring-1 ring-white/70 hover:bg-blush hover:text-ember"
+            aria-label="Log out"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
       </header>
 
       <section className="mx-auto grid max-w-7xl gap-10 px-5 pb-12 pt-6 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
@@ -59,7 +74,7 @@ export default function LandingPage({ onEnter, boards }) {
 
           <div className="mt-10 grid gap-3 sm:grid-cols-3">
             {[
-              ["Predict", BrainCircuit, "Caption, filename, tags"],
+              ["Predict", BrainCircuit, "Vision model analysis"],
               ["Save", Image, "Auto-board placement"],
               ["Learn", LayoutDashboard, "Correction-aware scoring"],
             ].map(([title, Icon, body]) => (

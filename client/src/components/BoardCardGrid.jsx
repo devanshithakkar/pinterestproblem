@@ -1,6 +1,17 @@
 import { ArrowUpRight, Images, Sparkles } from "lucide-react";
 
 export default function BoardCardGrid({ boards, activeBoardId, onSelectBoard }) {
+  if (!boards.length) {
+    return (
+      <section className="mb-7 rounded-[2rem] border border-dashed border-black/15 bg-white p-10 text-center">
+        <p className="text-lg font-black">No boards yet</p>
+        <p className="mt-2 text-sm font-semibold text-black/50">
+          Start by exploring images and Smart Saving your first idea.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section className="mb-7">
       <div className="mb-4 flex items-center justify-between gap-3">

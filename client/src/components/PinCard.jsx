@@ -9,7 +9,7 @@ export default function PinCard({ pin, boards, onMovePin }) {
           src={pin.imageUrl}
           alt={pin.title}
           className="w-full object-cover transition duration-500 group-hover:scale-105"
-          style={{ minHeight: `${Math.min(pin.height || 520, 760)}px` }}
+          style={{ height: `${Math.min(pin.height || 520, 760)}px` }}
         />
         <div className="absolute inset-x-3 top-3 flex justify-between gap-2 opacity-0 transition group-hover:opacity-100">
           {pin.ai?.confidence ? <ConfidenceBadge score={pin.ai.confidence} compact /> : null}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Menu, Plus, Sparkles, UploadCloud } from "lucide-react";
 import { api } from "../lib/api";
 import BoardSidebar from "../components/BoardSidebar";
@@ -9,21 +9,44 @@ import MasonryGrid from "../components/MasonryGrid";
 import RecommendationStrip from "../components/RecommendationStrip";
 import UploadModal from "../components/UploadModal";
 
-export default function BoardApp({ boards, activeBoard, activeBoardId, error, onSelectBoard, onBoardsChange, onBackHome }) {
+export default function BoardApp({
+  boards,
+  activeBoard,
+  activeBoardId,
+  error,
+  onSelectBoard,
+  onBoardsChange,
+  onBoardCreated,
+  onBackHome,
+  user,
+}) {
   const [pins, setPins] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [loadingBoard, setLoadingBoard] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showCreateBoard, setShowCreateBoard] = useState(false);
   const [mobileBoardsOpen, setMobileBoardsOpen] = useState(false);
+  const [localError, setLocalError] = useState("");
+  const [activeView, setActiveView] = useState("organizer");
+  const loadRequestId = useRef(0);
 
   async function loadBoard(boardId = activeBoardId) {
     if (!boardId) return;
+    const requestId = loadRequestId.current + 1;
+    loadRequestId.current = requestId;
     setLoadingBoard(true);
-    const data = await api.getBoard(boardId);
-    setPins(data.pins);
-    setRecommendations(data.recommendations);
-    setLoadingBoard(false);
+    setLocalError("");
+    try {
+      const data = await api.getBoard(boardId);
+      if (requestId !== loadRequestId.current) return;
+      setPins(data.pins);
+      setRecommendations(data.recommendations);
+    } catch (err) {
+      if (requestId !== loadRequestId.current) return;
+      setLocalError(err.message || "Unable to load this board.");
+    } finally {
+      if (requestId === loadRequestId.current) setLoadingBoard(false);
+    }
   }
 
   useEffect(() => {
@@ -35,9 +58,21 @@ export default function BoardApp({ boards, activeBoard, activeBoardId, error, on
     await loadBoard(preferredBoardId);
   }
 
-  async function movePin(pinId, boardId) {
-    await api.movePin(pinId, boardId);
+  async function handlePinSaved(boardId, pin) {
+    if (pin?.boardId === boardId) {
+      setPins((currentPins) => [pin, ...currentPins.filter((item) => item.id !== pin.id)]);
+    }
     await refresh(boardId);
+  }
+
+  async function movePin(pinId, boardId) {
+    setLocalError("");
+    try {
+      await api.movePin(pinId, boardId);
+      await refresh(boardId);
+    } catch (err) {
+      setLocalError(err.message || "Unable to move this pin.");
+    }
   }
 
   return (
@@ -47,9 +82,12 @@ export default function BoardApp({ boards, activeBoard, activeBoardId, error, on
       <BoardSidebar
         boards={boards}
         activeBoardId={activeBoardId}
+        activeView={activeView}
+        onViewChange={setActiveView}
         onSelectBoard={onSelectBoard}
         onCreateBoard={() => setShowCreateBoard(true)}
         onBackHome={onBackHome}
+        user={user}
       />
 
       <section className="relative min-w-0 flex-1">
@@ -108,12 +146,14 @@ export default function BoardApp({ boards, activeBoard, activeBoardId, error, on
         </header>
 
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-          {error ? <div className="mb-4 rounded-2xl bg-blush p-4 font-bold text-ember">{error}</div> : null}
+          {error || localError ? <div className="mb-4 rounded-2xl bg-blush p-4 font-bold text-ember">{localError || error}</div> : null}
 
           <section className="mb-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="glass-panel p-5">
-              <p className="text-sm font-black uppercase text-ember">{activeBoard?.pinCount || pins.length} saved pins</p>
-              <h2 className="mt-1 text-3xl font-black">{activeBoard?.description}</h2>
+              <p className="text-sm font-black uppercase text-ember">{activeBoard?.pinCount ?? pins.length} saved pins</p>
+              <h2 className="mt-1 text-3xl font-black">
+                {activeBoard?.description || "Start by exploring images and Smart Saving your first idea."}
+              </h2>
               <div className="mt-4 flex flex-wrap gap-2">
                 {activeBoard?.tags?.map((tag) => (
                   <span key={tag} className="rounded-full border border-white/70 bg-white/55 px-3 py-1.5 text-xs font-black text-black/55 shadow-sm backdrop-blur-xl">
@@ -140,16 +180,35 @@ export default function BoardApp({ boards, activeBoard, activeBoardId, error, on
             <BoardSkeleton />
           ) : (
             <>
-              <BoardCardGrid boards={boards} activeBoardId={activeBoardId} onSelectBoard={onSelectBoard} />
-              <MasonryGrid pins={pins} boards={boards} onMovePin={movePin} />
-              <RecommendationStrip recommendations={recommendations} />
+              {activeView === "organizer" || activeView === "overview" ? (
+                <BoardCardGrid boards={boards} activeBoardId={activeBoardId} onSelectBoard={onSelectBoard} />
+              ) : null}
+              {activeView === "organizer" ? <MasonryGrid pins={pins} boards={boards} onMovePin={movePin} /> : null}
+              {activeView === "organizer" || activeView === "suggestions" ? (
+                <RecommendationStrip recommendations={recommendations} />
+              ) : null}
+              {activeView === "suggestions" && !recommendations.length ? (
+                <div className="rounded-[2rem] border border-dashed border-black/15 bg-white p-10 text-center">
+                  <p className="text-lg font-black">No AI suggestions yet</p>
+                  <p className="mt-2 text-sm font-semibold text-black/50">
+                    Save a few pins to this board and PinMind will surface similar ideas here.
+                  </p>
+                </div>
+              ) : null}
             </>
           )}
         </div>
       </section>
 
-      {showUpload ? <UploadModal boards={boards} onClose={() => setShowUpload(false)} onSaved={refresh} /> : null}
-      {showCreateBoard ? <CreateBoardModal onClose={() => setShowCreateBoard(false)} onCreated={refresh} /> : null}
+      {showUpload ? (
+        <UploadModal
+          boards={boards}
+          onClose={() => setShowUpload(false)}
+          onSaved={handlePinSaved}
+          onBoardCreated={onBoardCreated}
+        />
+      ) : null}
+      {showCreateBoard ? <CreateBoardModal onClose={() => setShowCreateBoard(false)} onCreated={onBoardCreated} /> : null}
     </div>
   );
 }

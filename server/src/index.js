@@ -14,6 +14,10 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ message: "Something went wrong in the prototype API." });
 });
 
-app.listen(port, () => {
-  console.log(`Smart Board Organizer API running on http://localhost:${port}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Smart Board Organizer API running on http://localhost:${port}`);
+  });
+}
+
+export default app;

@@ -1,12 +1,67 @@
+import { supabase } from "./supabaseClient";
+
 const jsonHeaders = { "Content-Type": "application/json" };
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:4000").replace(/\/$/, "");
+
+function apiUrl(path) {
+  return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+async function parseResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  const looksLikeHtml = text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html");
+  if (looksLikeHtml) {
+    throw new Error(
+      `The API returned an HTML page instead of JSON. Check VITE_API_BASE_URL and the backend deployment URL. Status: ${response.status}`,
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(text || `Request failed with status ${response.status}`);
+  }
+
+  return text ? { message: text } : {};
+}
+
+async function authHeaders() {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 async function request(path, options = {}) {
-  const response = await fetch(path, {
-    headers: jsonHeaders,
+  const nextHeaders = {
+    ...jsonHeaders,
+    ...(await authHeaders()),
+    ...options.headers,
+  };
+  const response = await fetch(apiUrl(path), {
     ...options,
+    headers: nextHeaders,
   });
-  const data = await response.json();
+  const data = await parseResponse(response);
+  if (response.status === 401) throw new Error(data.message || "Your session expired. Please sign in again.");
   if (!response.ok) throw new Error(data.message || "Request failed");
+  return data;
+}
+
+async function uploadImage(file) {
+  const formData = new FormData();
+  formData.append("image", file);
+  const response = await fetch(apiUrl("/api/uploads/image"), {
+    method: "POST",
+    headers: await authHeaders(),
+    body: formData,
+  });
+  const data = await parseResponse(response);
+  if (response.status === 401) throw new Error(data.message || "Your session expired. Please sign in again.");
+  if (!response.ok) throw new Error(data.message || "Upload failed");
   return data;
 }
 
@@ -14,7 +69,14 @@ export const api = {
   getBoards: () => request("/api/boards"),
   createBoard: (payload) => request("/api/boards", { method: "POST", body: JSON.stringify(payload) }),
   getBoard: (id) => request(`/api/boards/${id}`),
+  uploadImage,
   predict: (payload) => request("/api/predict", { method: "POST", body: JSON.stringify(payload) }),
+  aiPredictBoard: (payload) => request("/api/ai/predict-board", { method: "POST", body: JSON.stringify(payload) }),
+  aiAnalyzeImage: (payload) => request("/api/ai/analyze-image", { method: "POST", body: JSON.stringify(payload) }),
+  aiAutoSave: (payload) => request("/api/ai/auto-save", { method: "POST", body: JSON.stringify(payload) }),
+  aiConfirmSave: (payload) => request("/api/ai/confirm-save", { method: "POST", body: JSON.stringify(payload) }),
+  aiCreateBoardAndSave: (payload) =>
+    request("/api/ai/create-board-and-save", { method: "POST", body: JSON.stringify(payload) }),
   savePin: (payload) => request("/api/pins", { method: "POST", body: JSON.stringify(payload) }),
   movePin: (pinId, boardId) =>
     request(`/api/pins/${pinId}/board`, { method: "PATCH", body: JSON.stringify({ boardId }) }),
