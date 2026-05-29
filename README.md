@@ -144,6 +144,8 @@ AI_PROVIDER=mock
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 GEMINI_VISION_MODEL=gemini-2.5-flash
+PEXELS_API_KEY=
+UNSPLASH_ACCESS_KEY=
 ```
 
 Frontend, in `client/.env` locally and the frontend Vercel project:
@@ -164,6 +166,23 @@ VITE_API_BASE_URL=https://your-backend-vercel-url
 
 Never add `SUPABASE_SERVICE_ROLE_KEY` to the frontend project.
 Never add `OPENAI_API_KEY` or `GEMINI_API_KEY` to the frontend project.
+Never add `PEXELS_API_KEY` or `UNSPLASH_ACCESS_KEY` to the frontend project.
+
+## Image Library Providers
+
+The Explore library tab searches image providers through the backend route:
+
+```text
+GET /api/library/search?q=&page=&provider=
+```
+
+Supported providers:
+
+- `provider=pexels`
+- `provider=unsplash`
+- `provider=all`
+
+Pexels and Unsplash are optional backend-only providers. If a provider key is missing or the provider request fails, PinMind falls back to mock discovery images. The frontend never calls Pexels or Unsplash directly; it only calls the PinMind backend.
 
 ## Local Setup
 
@@ -253,6 +272,8 @@ Environment variables:
   OPENAI_API_KEY
   GEMINI_API_KEY
   GEMINI_VISION_MODEL
+  PEXELS_API_KEY
+  UNSPLASH_ACCESS_KEY
 ```
 
 Frontend project:

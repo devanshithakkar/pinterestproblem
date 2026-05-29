@@ -6,6 +6,7 @@ import ConfidenceBadge from "./ConfidenceBadge";
 export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
   const [query, setQuery] = useState("desk setup");
   const [debouncedQuery, setDebouncedQuery] = useState(query);
+  const [provider, setProvider] = useState("pexels");
   const [images, setImages] = useState([]);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState(null);
@@ -29,7 +30,7 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
 
   useEffect(() => {
     loadImages({ nextPage: 1, replace: true });
-  }, [debouncedQuery]);
+  }, [debouncedQuery, provider]);
 
   async function loadImages({ nextPage, replace }) {
     const requestId = requestRef.current + 1;
@@ -37,7 +38,7 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
     setError("");
     replace ? setLoading(true) : setLoadingMore(true);
     try {
-      const data = await api.searchLibrary({ query: debouncedQuery, page: nextPage });
+      const data = await api.searchLibrary({ query: debouncedQuery, provider, page: nextPage });
       if (requestId !== requestRef.current) return;
       setImages((current) => (replace ? data.images : [...current, ...data.images]));
       setPagination(data.pagination);
@@ -154,14 +155,26 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
         <p className="text-sm font-black uppercase text-ember">Explore library</p>
         <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h2 className="max-w-2xl text-3xl font-black">Search visual inspiration and Smart Save without manual sorting.</h2>
-          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/70 bg-white/70 px-3 py-2 shadow-sm lg:w-96">
-            <Search className="h-4 w-4 text-black/40" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="w-full bg-transparent text-sm font-semibold outline-none"
-              placeholder="Search Pexels..."
-            />
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto] lg:w-[34rem]">
+            <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/70 bg-white/70 px-3 py-2 shadow-sm">
+              <Search className="h-4 w-4 text-black/40" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="w-full bg-transparent text-sm font-semibold outline-none"
+                placeholder="Search image library..."
+              />
+            </div>
+            <select
+              value={provider}
+              onChange={(event) => setProvider(event.target.value)}
+              className="rounded-2xl border border-white/70 bg-white/70 px-3 py-2 text-sm font-black shadow-sm outline-none"
+              aria-label="Image provider"
+            >
+              <option value="pexels">Pexels</option>
+              <option value="unsplash">Unsplash</option>
+              <option value="all">Auto</option>
+            </select>
           </div>
         </div>
       </div>

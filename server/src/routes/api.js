@@ -4,6 +4,7 @@ import { readDb } from "../db/jsonStore.js";
 import { analyzeImageForBoards, predictBoard, getRecommendations } from "../services/aiService.js";
 import { uploadImageBuffer } from "../services/storageService.js";
 import { analyzeImageWithVision } from "../services/visionService.js";
+import { searchImageLibrary } from "../services/imageLibraryService.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
   createBoard,
@@ -34,142 +35,6 @@ function sendSupabaseReadError(res, resource, error) {
 function sendSupabaseWriteError(res, resource, error) {
   console.error(`Failed to create ${resource} in Supabase`, error);
   res.status(500).json({ message: `Unable to create ${resource}. Please check the Supabase configuration.` });
-}
-
-const fallbackLibraryImages = [
-  {
-    id: "fallback-desk",
-    provider: "mock",
-    title: "Sage desk setup",
-    description: "A calm desk setup with laptop, soft greens, and focused workspace styling.",
-    imageUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=82",
-    thumbnailUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=480&q=72",
-    sourceUrl: "https://unsplash.com/photos/person-using-macbook-pro-npxXWgQ33ZQ",
-    authorName: "Unsplash",
-    authorUrl: "https://unsplash.com",
-    width: 1200,
-    height: 800,
-    tags: ["desk", "workspace", "laptop", "coding"],
-  },
-  {
-    id: "fallback-room",
-    provider: "mock",
-    title: "Soft bedroom shelf",
-    description: "Warm room decor with shelves, plants, and cozy neutral interior styling.",
-    imageUrl: "https://images.unsplash.com/photo-1616046229478-9901c5536a45?auto=format&fit=crop&w=1200&q=82",
-    thumbnailUrl: "https://images.unsplash.com/photo-1616046229478-9901c5536a45?auto=format&fit=crop&w=480&q=72",
-    sourceUrl: "https://unsplash.com",
-    authorName: "Unsplash",
-    authorUrl: "https://unsplash.com",
-    width: 1200,
-    height: 900,
-    tags: ["room", "decor", "interior", "plants"],
-  },
-  {
-    id: "fallback-food",
-    provider: "mock",
-    title: "Tomato basil pasta",
-    description: "Fresh pasta with tomato, basil, and warm food photography tones.",
-    imageUrl: "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?auto=format&fit=crop&w=1200&q=82",
-    thumbnailUrl: "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?auto=format&fit=crop&w=480&q=72",
-    sourceUrl: "https://unsplash.com",
-    authorName: "Unsplash",
-    authorUrl: "https://unsplash.com",
-    width: 1200,
-    height: 900,
-    tags: ["food", "recipe", "pasta", "tomato"],
-  },
-  {
-    id: "fallback-fashion",
-    provider: "mock",
-    title: "Streetwear color story",
-    description: "Editorial outfit inspiration with layered streetwear textures.",
-    imageUrl: "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=1200&q=82",
-    thumbnailUrl: "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=480&q=72",
-    sourceUrl: "https://unsplash.com",
-    authorName: "Unsplash",
-    authorUrl: "https://unsplash.com",
-    width: 1200,
-    height: 1500,
-    tags: ["fashion", "outfit", "streetwear", "style"],
-  },
-];
-
-function normalizePexelsPhoto(photo, query) {
-  const tags = query
-    .split(/\s+/)
-    .map((tag) => tag.trim().toLowerCase())
-    .filter(Boolean)
-    .slice(0, 8);
-
-  return {
-    id: String(photo.id),
-    provider: "pexels",
-    title: photo.alt || `Pexels image ${photo.id}`,
-    description: photo.alt || `Image by ${photo.photographer || "Pexels"}`,
-    imageUrl: photo.src?.large2x || photo.src?.large || photo.src?.original,
-    thumbnailUrl: photo.src?.medium || photo.src?.small || photo.src?.tiny || photo.src?.large,
-    sourceUrl: photo.url,
-    authorName: photo.photographer,
-    authorUrl: photo.photographer_url,
-    width: photo.width,
-    height: photo.height,
-    tags,
-  };
-}
-
-async function searchPexelsLibrary({ query, page, perPage }) {
-  if (!process.env.PEXELS_API_KEY) {
-    throw new Error("PEXELS_API_KEY is not configured.");
-  }
-
-  const url = new URL("https://api.pexels.com/v1/search");
-  url.searchParams.set("query", query);
-  url.searchParams.set("page", String(page));
-  url.searchParams.set("per_page", String(perPage));
-  url.searchParams.set("orientation", "all");
-
-  const response = await fetch(url, {
-    headers: { Authorization: process.env.PEXELS_API_KEY },
-  });
-  if (!response.ok) {
-    throw new Error(`Pexels search failed with status ${response.status}`);
-  }
-
-  const data = await response.json();
-  return {
-    images: (data.photos || []).map((photo) => normalizePexelsPhoto(photo, query)),
-    pagination: {
-      page: data.page || page,
-      perPage: data.per_page || perPage,
-      totalResults: data.total_results || 0,
-      nextPage: data.next_page ? page + 1 : null,
-      hasMore: Boolean(data.next_page),
-    },
-  };
-}
-
-function searchFallbackLibrary({ query, page, perPage }) {
-  const normalized = query.trim().toLowerCase();
-  const filtered = fallbackLibraryImages.filter((image) =>
-    [image.title, image.description, ...(image.tags || [])].join(" ").toLowerCase().includes(normalized),
-  );
-  const pool = filtered.length ? filtered : fallbackLibraryImages;
-  const start = (page - 1) * perPage;
-  const repeated = Array.from({ length: Math.ceil((start + perPage) / pool.length) + 1 }, (_, index) =>
-    pool.map((image) => ({ ...image, id: `${image.id}-${index}`, tags: [...new Set([...(image.tags || []), ...normalized.split(/\s+/).filter(Boolean)])] })),
-  ).flat();
-  const images = repeated.slice(start, start + perPage);
-  return {
-    images,
-    pagination: {
-      page,
-      perPage,
-      totalResults: pool.length,
-      nextPage: page < 3 ? page + 1 : null,
-      hasMore: page < 3,
-    },
-  };
 }
 
 function buildAiContext(boards, pins) {
@@ -432,24 +297,10 @@ apiRouter.get("/library/search", async (req, res) => {
   const perPage = Math.min(30, Math.max(20, Number.parseInt(req.query.perPage || req.query.per_page || "24", 10) || 24));
 
   try {
-    let result;
-    let usedProvider = provider;
-    if (provider === "pexels" || provider === "all") {
-      try {
-        result = await searchPexelsLibrary({ query, page, perPage });
-        usedProvider = "pexels";
-      } catch (error) {
-        console.warn("Pexels library search failed; using fallback images.", error.message);
-        result = searchFallbackLibrary({ query, page, perPage });
-        usedProvider = "mock";
-      }
-    } else {
-      result = searchFallbackLibrary({ query, page, perPage });
-      usedProvider = "mock";
-    }
+    const result = await searchImageLibrary({ query, provider, page, perPage });
 
     res.json({
-      provider: usedProvider,
+      provider: result.provider,
       query,
       images: result.images,
       pagination: result.pagination,
