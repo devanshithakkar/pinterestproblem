@@ -283,6 +283,7 @@ All endpoints below except `/api/health` require `Authorization: Bearer <Supabas
 | POST | `/api/ai/analyze-image` | Run vision analysis and return a board decision |
 | POST | `/api/ai/smart-save` | Autonomous Smart Save from an image URL |
 | POST | `/api/ai/autonomous-save` | Autonomous Smart Save from an image URL |
+| POST | `/api/ai/autonomous-save-url` | Validate a pasted direct image URL, analyze, auto-place, and save |
 | POST | `/api/ai/autonomous-save-upload` | Upload, analyze, auto-place, and save |
 | POST | `/api/ai/undo-autonomous-save` | Undo the most recent autonomous save |
 | POST | `/api/ai/auto-save` | Predict, then auto-save/confirm/suggest |
@@ -343,6 +344,19 @@ Supported providers:
 - `provider=all`
 
 Pexels and Unsplash are optional backend-only providers. If a provider key is missing or the provider request fails, PinMind falls back to mock discovery images. The frontend never calls Pexels or Unsplash directly; it only calls the PinMind backend.
+
+## Paste Image URL
+
+The upload modal also supports direct image URLs. Paste a URL such as a `.jpg`, `.png`, `.webp`, or supported `.gif` image and PinMind starts Smart Save automatically:
+
+1. The frontend validates the URL shape.
+2. The image preview is loaded when the host allows it.
+3. The backend validates the URL again and rejects unsafe protocols, localhost, and private network addresses.
+4. The backend fetches the image with a timeout and an 8MB size limit.
+5. Gemini analyzes the image bytes.
+6. The same autonomous Smart Save logic used by uploads and Explore either saves to a related board or creates a suitable private board.
+
+Some websites block direct image access or provide webpage URLs instead of raw images. In that case PinMind returns a clean error asking for a direct image link.
 
 ## Local Setup
 
@@ -545,6 +559,33 @@ curl -sS -X POST "$API_URL/api/ai/autonomous-save-upload" \
   -F "image=@/absolute/path/to/image.jpg"
 ```
 
+Smart-save a pasted direct image URL:
+
+```bash
+curl -sS -X POST "$API_URL/api/ai/autonomous-save-url" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"imageUrl":"https://images.pexels.com/photos/414612/pexels-photo-414612.jpeg"}'
+```
+
+Invalid webpage URL test:
+
+```bash
+curl -sS -X POST "$API_URL/api/ai/autonomous-save-url" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"imageUrl":"https://www.pinterest.com/pin/example"}'
+```
+
+Invalid protocol test:
+
+```bash
+curl -sS -X POST "$API_URL/api/ai/autonomous-save-url" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"imageUrl":"javascript:alert(1)"}'
+```
+
 Confirm save:
 
 ```bash
@@ -675,22 +716,25 @@ curl -sS -X POST "$API_URL/api/ai/undo-autonomous-save" \
 11. Open a board and edit, move, and delete a pin.
 12. Upload an image that matches an existing board and confirm it auto-saves without another click.
 13. Upload an unrelated image and confirm PinMind creates a private new board and saves without another click.
-14. Use Undo after an autonomous save.
-15. Use Move after an autonomous save.
-16. Rename the newly created board after an autonomous save.
-17. Smart Save an animal image from Explore and confirm Animals is created or reused.
-18. Smart Save another animal image and confirm the same Animals board is reused.
-19. Smart Save a room decor image and confirm Room Decor is used or created.
-20. Smart Save a coding image and confirm Coding / Tech is used or created.
-21. Smart Save a concert image and confirm Concerts / Music Events is used or created, not Vehicles.
-22. Smart Save a dress/fashion image and confirm Fashion is used or created, not Vehicles.
-23. Smart Save a campus/friends image and confirm Campus Life / Friends is used or created.
-24. Smart Save an unknown image twice and confirm Visual Inspiration is reused.
-25. Confirm no new board is created with a random name like `Fhrhaulsuxbcxzcrviqq Ideas`.
-26. Click a saved pin image and confirm the fullscreen preview opens.
-27. Close the preview with Escape and by clicking the backdrop.
-28. Switch to another browser tab, come back, and confirm boards remain visible.
-29. In People, type quickly, confirm search does not freeze, and confirm View Profile still navigates.
+14. Paste a direct Pexels image URL and confirm it previews, analyzes automatically, and saves.
+15. Paste a second similar direct image URL and confirm the related board is reused.
+16. Paste a webpage URL and confirm a clean direct-image error appears.
+17. Use Undo after an autonomous save.
+18. Use Move after an autonomous save.
+19. Rename the newly created board after an autonomous save.
+20. Smart Save an animal image from Explore and confirm Animals is created or reused.
+21. Smart Save another animal image and confirm the same Animals board is reused.
+22. Smart Save a room decor image and confirm Room Decor is used or created.
+23. Smart Save a coding image and confirm Coding / Tech is used or created.
+24. Smart Save a concert image and confirm Concerts / Music Events is used or created, not Vehicles.
+25. Smart Save a dress/fashion image and confirm Fashion is used or created, not Vehicles.
+26. Smart Save a campus/friends image and confirm Campus Life / Friends is used or created.
+27. Smart Save an unknown image twice and confirm Visual Inspiration is reused.
+28. Confirm no new board is created with a random name like `Fhrhaulsuxbcxzcrviqq Ideas`.
+29. Click a saved pin image and confirm the fullscreen preview opens.
+30. Close the preview with Escape and by clicking the backdrop.
+31. Switch to another browser tab, come back, and confirm boards remain visible.
+32. In People, type quickly, confirm search does not freeze, and confirm View Profile still navigates.
 
 Mobile checks:
 

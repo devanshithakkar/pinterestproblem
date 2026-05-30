@@ -343,7 +343,7 @@ async function analyzeWithOpenAI({ imageUrl, imageBase64, mimeType }) {
           role: "user",
           content: [
             { type: "input_text", text: prompt() },
-            { type: "input_image", image_url: imageUrl || dataUrlFromBase64(imageBase64, mimeType), detail: "low" },
+            { type: "input_image", image_url: dataUrlFromBase64(imageBase64, mimeType) || imageUrl, detail: "low" },
           ],
         },
       ],

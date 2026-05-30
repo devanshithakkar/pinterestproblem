@@ -17,6 +17,26 @@ const emptyForm = {
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const smartSaveSteps = ["Preparing", "Uploading", "Analyzing", "Matching", "Saving", "Done"];
+const urlSmartSaveSteps = ["Validating URL", "Preview", "Analyzing", "Matching", "Saving", "Done"];
+
+function isValidHttpImageUrl(value = "") {
+  try {
+    const url = new URL(value.trim());
+    return ["http:", "https:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function loadImagePreview(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(true);
+    image.onerror = reject;
+    image.referrerPolicy = "no-referrer";
+    image.src = src;
+  });
+}
 
 async function compressImageFile(file) {
   if (!file || !file.type.startsWith("image/")) return file;
@@ -47,6 +67,7 @@ async function compressImageFile(file) {
 
 export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }) {
   const [form, setForm] = useState(emptyForm);
+  const [urlInput, setUrlInput] = useState("");
   const [visionAnalysis, setVisionAnalysis] = useState(null);
   const [aiResult, setAiResult] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
@@ -67,6 +88,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     () => boards.find((board) => board.id === aiResult?.predictedBoard?.id) || aiResult?.predictedBoard,
     [boards, aiResult],
   );
+  const activeSteps = form.source === "Image URL" ? urlSmartSaveSteps : smartSaveSteps;
 
   function applyAiResult(result) {
     const analysis = result.analysis || {};
@@ -138,6 +160,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
     setBusy(true);
+    setUrlInput("");
     setBusyLabel("Preparing image");
     setStepIndex(0);
     setError("");
@@ -187,6 +210,44 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     }
   }
 
+  async function smartSaveImageUrl(rawUrl = urlInput) {
+    const imageUrl = String(rawUrl || "").trim();
+    if (busy) return;
+    if (!isValidHttpImageUrl(imageUrl)) {
+      setError("This does not look like a direct image URL.");
+      return;
+    }
+
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    setBusy(true);
+    setBusyLabel("Validating URL");
+    setStepIndex(0);
+    setError("");
+    setSuccess("");
+    setLastSave(null);
+    resetAiState();
+    try {
+      setForm((current) => ({ ...current, imageUrl, source: "Image URL", fileName: imageUrl.split("/").pop() || "remote-image" }));
+      setBusyLabel("Loading preview");
+      await loadImagePreview(imageUrl);
+      if (requestId !== requestRef.current) return;
+      setBusyLabel("Analyzing image");
+      setStepIndex(2);
+      const result = await api.aiAutonomousSaveUrl({ imageUrl, source: "Image URL", height: form.height || 580 });
+      if (requestId !== requestRef.current) return;
+      setStepIndex(3);
+      setBusyLabel("Saving");
+      setStepIndex(4);
+      await finishSmartSave(result);
+    } catch (err) {
+      setError(err.message || "This image URL cannot be previewed. Try a direct image link.");
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
+    }
+  }
+
   function resetAiState() {
     setVisionAnalysis(null);
     setAiResult(null);
@@ -204,10 +265,24 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
   }
 
   function useQuickSave(item) {
+    setUrlInput(item.imageUrl || "");
     setForm(item);
     setError("");
     resetAiState();
     organizeWithAi(item);
+  }
+
+  function handleUrlChange(value) {
+    setUrlInput(value);
+    setForm((current) => ({ ...current, imageUrl: value, source: "Image URL" }));
+    resetAiState();
+  }
+
+  function handleUrlPaste(event) {
+    const pasted = event.clipboardData.getData("text").trim();
+    if (!pasted) return;
+    setUrlInput(pasted);
+    window.setTimeout(() => smartSaveImageUrl(pasted), 0);
   }
 
   async function organizeWithAi(nextForm = form) {
@@ -402,15 +477,19 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
             </label>
 
             <label className="block text-sm font-black">
-              Image URL <span className="font-semibold text-black/40">(optional quick test)</span>
+              Image URL <span className="font-semibold text-black/40">(direct image link)</span>
               <input
-                value={form.imageUrl.startsWith("data:") ? "" : form.imageUrl}
-                onChange={(event) => {
-                  setForm({ ...form, imageUrl: event.target.value, source: "Image URL" });
-                  resetAiState();
+                value={urlInput}
+                onChange={(event) => handleUrlChange(event.target.value)}
+                onPaste={handleUrlPaste}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    smartSaveImageUrl();
+                  }
                 }}
                 onBlur={() => {
-                  if (form.imageUrl && !busy && !aiResult) organizeWithAi();
+                  if (urlInput && !busy && !aiResult) smartSaveImageUrl();
                 }}
                 disabled={busy}
                 className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 outline-none focus:border-ember"
@@ -454,7 +533,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                 {busy ? <Loader2 className="h-5 w-5 animate-spin text-ember" /> : <Sparkles className="h-5 w-5 text-ember" />}
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-6">
-                {smartSaveSteps.map((step, index) => (
+                {activeSteps.map((step, index) => (
                   <div
                     key={step}
                     className={`rounded-2xl px-3 py-2 text-center text-[11px] font-black ${

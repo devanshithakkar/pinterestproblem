@@ -139,6 +139,7 @@ export const api = {
   aiAnalyzeImage: (payload) => request("/api/ai/analyze-image", { method: "POST", body: JSON.stringify(payload) }),
   aiAutoSave: (payload) => request("/api/ai/auto-save", { method: "POST", body: JSON.stringify(payload) }),
   aiAutonomousSave: (payload) => request("/api/ai/autonomous-save", { method: "POST", body: JSON.stringify(payload) }),
+  aiAutonomousSaveUrl: (payload) => request("/api/ai/autonomous-save-url", { method: "POST", body: JSON.stringify(payload) }),
   aiConfirmSave: (payload) => request("/api/ai/confirm-save", { method: "POST", body: JSON.stringify(payload) }),
   aiCreateBoardAndSave: (payload) =>
     request("/api/ai/create-board-and-save", { method: "POST", body: JSON.stringify(payload) }),
