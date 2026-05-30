@@ -1,6 +1,7 @@
 import { Eye, EyeOff, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { Button, IconButton } from "./ui";
 
 function profileToForm(profile, user) {
   return {
@@ -78,9 +79,9 @@ export default function ProfileSettingsModal({ user, onClose }) {
             <p className="text-xs font-black uppercase text-ember">Profile settings</p>
             <h2 className="text-2xl font-black">Your public identity</h2>
           </div>
-          <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full bg-black/[0.04]">
+          <IconButton type="button" onClick={onClose} label="Close profile settings" className="rounded-full">
             <X className="h-5 w-5" />
-          </button>
+          </IconButton>
         </div>
 
         {loading ? (
@@ -189,10 +190,9 @@ export default function ProfileSettingsModal({ user, onClose }) {
 
         {error ? <div className="mt-4 rounded-2xl bg-blush px-4 py-3 text-sm font-bold text-ember">{error}</div> : null}
         {message ? <div className="mt-4 rounded-2xl bg-moss/10 px-4 py-3 text-sm font-bold text-moss">{message}</div> : null}
-        <button disabled={saving || loading} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-ember px-5 py-3 font-black text-white shadow-lift disabled:opacity-60">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        <Button disabled={saving || loading} loading={saving} type="submit" className="mt-6 w-full">
           Save profile
-        </button>
+        </Button>
         {profile?.username ? (
           <a href={`/u/${profile.username}`} className="mt-3 block text-center text-sm font-black text-ember">
             View public profile

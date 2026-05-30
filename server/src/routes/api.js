@@ -1,19 +1,30 @@
 import express from "express";
 import multer from "multer";
-import dns from "node:dns/promises";
-import net from "node:net";
 import { readDb } from "../db/jsonStore.js";
-import { analyzeImageForBoards, predictBoard, getRecommendations } from "../services/aiService.js";
+import { predictBoard, getRecommendations } from "../services/aiService.js";
 import { uploadImageBuffer } from "../services/storageService.js";
-import { analyzeImageWithVision } from "../services/visionService.js";
 import { searchImageLibrary } from "../services/imageLibraryService.js";
+import { normalizeSmartSaveInput, normalizeUrlSmartSaveInput } from "../services/imageInputService.js";
+import {
+  analyzeSmartSaveInput,
+  createPinPayloadFromAi as servicePinPayloadFromAi,
+  legacyPredictionPayload as serviceLegacyPredictionPayload,
+  runSmartSave as runSmartSaveService,
+} from "../services/smartSaveService.js";
+import {
+  buildVisibleBoardIntelligenceProfile,
+  getBoardBasedRecommendations,
+  getBoardCleanupSuggestions,
+  mergeUserBoards,
+  searchUserPins,
+} from "../services/visualMemoryService.js";
+import { getSuggestedBoardFromAnalysis, sanitizeBoardName } from "../services/boardNameService.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
   createBoard,
   createPin,
   deleteBoard,
   deletePin,
-  getAiTrainingData,
   getBoardWithPins,
   getBoards,
   getProfile,
@@ -38,8 +49,6 @@ const upload = multer({
     callback(null, true);
   },
 });
-const MAX_REMOTE_IMAGE_BYTES = 8 * 1024 * 1024;
-const ALLOWED_REMOTE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 function uploadSingleImage(req, res, next) {
   upload.single("image")(req, res, (error) => {
@@ -62,132 +71,6 @@ function sendSupabaseWriteError(res, resource, error) {
   res.status(500).json({ message: `Unable to create ${resource}. Please check the Supabase configuration.` });
 }
 
-function isPrivateIp(address = "") {
-  if (!address) return true;
-  if (net.isIPv4(address)) {
-    const parts = address.split(".").map(Number);
-    return (
-      parts[0] === 10 ||
-      parts[0] === 127 ||
-      parts[0] === 0 ||
-      (parts[0] === 169 && parts[1] === 254) ||
-      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-      (parts[0] === 192 && parts[1] === 168)
-    );
-  }
-  if (net.isIPv6(address)) {
-    const value = address.toLowerCase();
-    return value === "::1" || value.startsWith("fc") || value.startsWith("fd") || value.startsWith("fe80:");
-  }
-  return true;
-}
-
-async function assertPublicImageUrl(imageUrl) {
-  let parsed;
-  try {
-    parsed = new URL(imageUrl);
-  } catch {
-    const error = new Error("This does not look like a valid image URL.");
-    error.status = 400;
-    throw error;
-  }
-
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    const error = new Error("Only http and https image URLs are supported.");
-    error.status = 400;
-    throw error;
-  }
-  if (["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(parsed.hostname.toLowerCase())) {
-    const error = new Error("Local or private network image URLs are not allowed.");
-    error.status = 400;
-    throw error;
-  }
-
-  const addresses = await dns.lookup(parsed.hostname, { all: true, verbatim: true });
-  if (!addresses.length || addresses.some((entry) => isPrivateIp(entry.address))) {
-    const error = new Error("Private network image URLs are not allowed.");
-    error.status = 400;
-    throw error;
-  }
-
-  return parsed;
-}
-
-async function fetchWithCheckedRedirects(url, options = {}, redirectCount = 0) {
-  await assertPublicImageUrl(url);
-  const response = await fetch(url, {
-    ...options,
-    redirect: "manual",
-    signal: AbortSignal.timeout(12_000),
-  });
-  if ([301, 302, 303, 307, 308].includes(response.status)) {
-    if (redirectCount >= 3) {
-      const error = new Error("The image URL redirects too many times.");
-      error.status = 400;
-      throw error;
-    }
-    const location = response.headers.get("location");
-    if (!location) {
-      const error = new Error("The image URL redirects without a valid destination.");
-      error.status = 400;
-      throw error;
-    }
-    return fetchWithCheckedRedirects(new URL(location, url).toString(), options, redirectCount + 1);
-  }
-  await assertPublicImageUrl(response.url || url);
-  return response;
-}
-
-function normalizeImageContentType(value = "") {
-  return String(value).split(";")[0].trim().toLowerCase();
-}
-
-async function fetchVerifiedRemoteImage(imageUrl) {
-  const head = await fetchWithCheckedRedirects(imageUrl, { method: "HEAD" }).catch(() => null);
-  if (head?.ok) {
-    const headType = normalizeImageContentType(head.headers.get("content-type"));
-    const length = Number(head.headers.get("content-length") || 0);
-    if (headType && !ALLOWED_REMOTE_IMAGE_TYPES.has(headType)) {
-      const error = new Error("This does not look like a direct image URL.");
-      error.status = 400;
-      throw error;
-    }
-    if (length > MAX_REMOTE_IMAGE_BYTES) {
-      const error = new Error("Remote image is too large. Use an image under 8MB.");
-      error.status = 400;
-      throw error;
-    }
-  }
-
-  const response = await fetchWithCheckedRedirects(imageUrl, { method: "GET" });
-  if (!response.ok) {
-    const error = new Error(response.status === 403 ? "The image host blocked access." : "The image could not be loaded from that site.");
-    error.status = 400;
-    throw error;
-  }
-
-  const mimeType = normalizeImageContentType(response.headers.get("content-type"));
-  if (!ALLOWED_REMOTE_IMAGE_TYPES.has(mimeType)) {
-    const error = new Error("This does not look like a direct image URL.");
-    error.status = 400;
-    throw error;
-  }
-  const length = Number(response.headers.get("content-length") || 0);
-  if (length > MAX_REMOTE_IMAGE_BYTES) {
-    const error = new Error("Remote image is too large. Use an image under 8MB.");
-    error.status = 400;
-    throw error;
-  }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.length > MAX_REMOTE_IMAGE_BYTES) {
-    const error = new Error("Remote image is too large. Use an image under 8MB.");
-    error.status = 400;
-    throw error;
-  }
-  return { buffer, mimeType, finalUrl: response.url || imageUrl };
-}
-
 function buildAiContext(boards, pins) {
   return {
     boards: boards.map((board) => ({
@@ -206,572 +89,6 @@ function buildAiContext(boards, pins) {
     })),
     corrections: [],
     recommendations: [],
-  };
-}
-
-async function getAiContextForUser(userId) {
-  return getAiTrainingData(userId);
-}
-
-function aiImagePayload(body = {}) {
-  return {
-    imageUrl: body.imageUrl || body.image_url,
-    fileName: body.fileName || body.file_name,
-    title: body.title,
-    description: body.description,
-    caption: body.caption || body.description,
-    tags: body.tags,
-    providerTags: body.providerTags || body.provider_tags,
-    dominantColor: body.dominantColor || body.dominant_color,
-    source: body.source,
-    height: body.height,
-  };
-}
-
-function visionPayloadForBoardMatching(visionAnalysis, body = {}) {
-  return {
-    imageUrl: body.imageUrl || body.image_url,
-    fileName: body.fileName || body.file_name,
-    title: visionAnalysis.title || body.title,
-    description: visionAnalysis.description || body.description,
-    caption: visionAnalysis.description || body.caption || body.description,
-    primarySubject: visionAnalysis.primarySubject,
-    primaryCategory: visionAnalysis.primaryCategory,
-    secondaryCategories: visionAnalysis.secondaryCategories,
-    detectedObjects: visionAnalysis.detectedObjects || visionAnalysis.objects,
-    tags: visionAnalysis.detectedTags || body.tags,
-    objects: visionAnalysis.objects,
-    style: visionAnalysis.style,
-    colors: visionAnalysis.colors,
-    mood: visionAnalysis.mood,
-    environment: visionAnalysis.environment,
-    isPerson: visionAnalysis.isPerson,
-    isAnimal: visionAnalysis.isAnimal,
-    isInterior: visionAnalysis.isInterior,
-    isFood: visionAnalysis.isFood,
-    isFashion: visionAnalysis.isFashion,
-    isTech: visionAnalysis.isTech,
-    isAnimeOrIllustration: visionAnalysis.isAnimeOrIllustration,
-    isMusicOrConcert: visionAnalysis.isMusicOrConcert,
-    isVehicle: visionAnalysis.isVehicle,
-    isCampusOrFriends: visionAnalysis.isCampusOrFriends,
-    eventType: visionAnalysis.eventType,
-    peopleCount: visionAnalysis.peopleCount,
-    category: visionAnalysis.category,
-    suggestedBoardName: visionAnalysis.suggestedBoardName,
-    source: body.source,
-    height: body.height,
-  };
-}
-
-function normalizeDecision(boardDecision, visionAnalysis) {
-  const suggestedBoardName =
-    boardDecision.action === "suggest_new_board"
-      ? visionAnalysis.suggestedBoardName || boardDecision.suggestedBoardName
-      : boardDecision.suggestedBoardName || visionAnalysis.suggestedBoardName;
-  return {
-    action: boardDecision.action,
-    predictedBoard: boardDecision.predictedBoard,
-    predictedBoardId: boardDecision.predictedBoardId,
-    predictedBoardName: boardDecision.predictedBoardName,
-    confidence: boardDecision.confidence,
-    confidencePercent: boardDecision.confidencePercent,
-    detectedTags: boardDecision.detectedTags,
-    reasoning: boardDecision.reasoning,
-    suggestedBoardName,
-    suggestedBoardDescription:
-      boardDecision.suggestedBoardDescription ||
-      (suggestedBoardName ? `AI-created board for ${visionAnalysis.detectedTags.slice(0, 5).join(", ")} inspiration.` : null),
-    suggestedKeywords: boardDecision.suggestedKeywords || visionAnalysis.detectedTags?.slice(0, 8) || [],
-    suggestedTitle: visionAnalysis.title,
-    suggestedCaption: visionAnalysis.description,
-    scores: boardDecision.scores || [],
-  };
-}
-
-async function analyzeAndDecide(userId, body = {}) {
-  const imageUrl = body.imageUrl || body.image_url;
-  const imageBase64 = body.imageBase64 || body.image_base64;
-  const mimeType = body.mimeType || body.mime_type;
-  const fileName = body.fileName || body.file_name;
-  if (!imageUrl && !imageBase64) throw new Error("imageUrl or imageBase64 is required.");
-
-  const visionAnalysis = await analyzeImageWithVision({ imageUrl, imageBase64, mimeType, fileName });
-  const { boards, pins, predictions } = await getAiContextForUser(userId);
-  const boardDecision = analyzeImageForBoards({
-    boards,
-    pins,
-    predictions,
-    image: visionPayloadForBoardMatching(visionAnalysis, body),
-  });
-  const decision = normalizeDecision(boardDecision, visionAnalysis);
-  return { analysis: visionAnalysis, decision };
-}
-
-function legacyPredictionPayload(analysis, decision) {
-  return {
-    ...decision,
-    detectedTags: analysis.detectedTags,
-    suggestedTitle: analysis.title,
-    suggestedCaption: analysis.description,
-    reasoning: decision.reasoning,
-  };
-}
-
-function pinPayloadFromAi({ body, analysis, decision, boardId }) {
-  return {
-    title: analysis.title || body.title?.trim() || decision.suggestedTitle || "Smart AI save",
-    caption: analysis.description || body.caption?.trim() || body.description?.trim() || decision.suggestedCaption || "",
-    tags: analysis.detectedTags || decision.detectedTags || [],
-    imageUrl: body.imageUrl || body.image_url,
-    fileName: body.fileName || body.file_name,
-    source: body.source || "AI vision save",
-    height: body.height || 580,
-    boardId,
-    ai: {
-      ...decision,
-      ...analysis,
-      predictedBoardId: decision.predictedBoard?.id,
-      selectedBoardId: boardId,
-      signals: analysis.detectedTags || decision.detectedTags,
-      explanation: decision.reasoning,
-      confidence: decision.confidence,
-    },
-  };
-}
-
-function smartSaveResponse({ action, analysis, decision, uploadResult, createdPin = null, createdBoard = null }) {
-  return {
-    action,
-    confidence: decision.confidence,
-    analysis,
-    decision,
-    predictedBoard: decision.predictedBoard || null,
-    suggestedBoardName: decision.suggestedBoardName || null,
-    suggestedBoardDescription: decision.suggestedBoardDescription || null,
-    suggestedBoard:
-      action === "suggest_new_board"
-        ? {
-            name: decision.suggestedBoardName,
-            description: decision.suggestedBoardDescription,
-            tags: decision.suggestedKeywords || analysis.detectedTags?.slice(0, 8) || [],
-          }
-        : null,
-    image: uploadResult,
-    createdPin,
-    createdBoard,
-    pin: createdPin,
-    board: createdBoard,
-  };
-}
-
-const genericBoardNames = new Set([
-  "image idea",
-  "image ideas",
-  "untitled",
-  "untitled board",
-  "new board",
-  "smart save",
-  "misc",
-  "miscellaneous",
-  "fresh ideas",
-  "visual inspiration",
-]);
-
-const categoryBoardMap = [
-  {
-    name: "Animals",
-    description: "Animal, pet, and wildlife inspiration saved by PinMind.",
-    keywords: ["animal", "animals", "pet", "pets", "wildlife", "dog", "cat", "bird", "puppy", "kitten", "horse", "rabbit"],
-  },
-  {
-    name: "Nature",
-    description: "Flowers, forests, mountains, beaches, and landscape inspiration.",
-    keywords: ["nature", "flower", "flowers", "forest", "mountain", "beach", "landscape", "outdoors", "garden", "plant", "plants"],
-  },
-  {
-    name: "Concerts / Music Events",
-    description: "Concerts, live music, festivals, stages, performers, and music event memories.",
-    keywords: ["concert", "concerts", "music", "stage", "singer", "band", "festival", "performance", "crowd", "event"],
-    flags: ["isMusicOrConcert"],
-  },
-  {
-    name: "Campus Life / Friends",
-    description: "Campus memories, friends, college life, group photos, and student moments.",
-    keywords: ["campus", "college", "student", "students", "friends", "friend", "group", "university", "classmate", "memories"],
-    flags: ["isCampusOrFriends"],
-  },
-  {
-    name: "Anime / Digital Art",
-    description: "Anime, manga, illustration, character art, and digital art inspiration.",
-    keywords: ["anime", "manga", "illustration", "illustrated", "digital", "art", "character", "cartoon", "fanart", "wallpaper"],
-  },
-  {
-    name: "Movies / Cinema",
-    description: "Movie posters, cinematic stills, film scenes, and cinema references.",
-    keywords: ["movie", "movies", "cinema", "film", "poster", "cinematic", "scene", "actor", "actress"],
-  },
-  {
-    name: "Fashion",
-    description: "Outfits, streetwear, accessories, and fashion styling inspiration.",
-    keywords: ["fashion", "outfit", "outfits", "streetwear", "accessories", "style", "dress", "shoe", "wardrobe", "clothing"],
-  },
-  {
-    name: "Coding / Tech",
-    description: "Coding, dashboards, UI screenshots, laptops, and technical workspace ideas.",
-    keywords: ["code", "coding", "tech", "technology", "ui", "dashboard", "laptop", "developer", "screen", "interface", "software"],
-  },
-  {
-    name: "Room Decor",
-    description: "Interior rooms, furniture, decor, lighting, and home styling ideas.",
-    keywords: ["interior", "room", "decor", "furniture", "home", "sofa", "lamp", "bedroom", "living", "shelf"],
-  },
-  {
-    name: "Food",
-    description: "Food, drinks, desserts, recipes, and meal inspiration.",
-    keywords: ["food", "drink", "drinks", "dessert", "recipe", "meal", "plate", "pasta", "breakfast", "kitchen"],
-  },
-  {
-    name: "Vehicles",
-    description: "Cars, bikes, motorcycles, and vehicle design inspiration.",
-    keywords: ["vehicle", "vehicles", "car", "cars", "bike", "bicycle", "motorcycle", "truck", "bus", "automotive"],
-    flags: ["isVehicle"],
-  },
-  {
-    name: "Fitness / Sports",
-    description: "Fitness, gym, workout, sports, and active lifestyle inspiration.",
-    keywords: ["sport", "sports", "fitness", "gym", "workout", "training", "yoga", "running", "athlete"],
-  },
-  {
-    name: "Architecture / Travel",
-    description: "Architecture, cities, buildings, travel, and destination inspiration.",
-    keywords: ["architecture", "building", "buildings", "city", "travel", "street", "hotel", "landmark", "urban"],
-  },
-];
-
-function normalizeName(value = "") {
-  return String(value)
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9\s/]+/g, " ")
-    .replace(/\bideas?\b/g, "")
-    .replace(/\binspiration\b/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function looksRandomToken(value = "") {
-  const compact = String(value).replace(/\s+ideas?$/i, "").replace(/[^a-z0-9]/gi, "");
-  if (compact.length >= 16 && /^[a-z0-9]+$/i.test(compact)) {
-    const vowelRatio = (compact.match(/[aeiou]/gi) || []).length / compact.length;
-    if (vowelRatio < 0.32 || /\d/.test(compact)) return true;
-  }
-  if (/^[0-9a-f]{8,}$/i.test(compact)) return true;
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(String(value))) return true;
-  return false;
-}
-
-function metadataWords(analysis = {}, imageMetadata = {}) {
-  const weakContextWords = new Set([
-    "aesthetic",
-    "background",
-    "beautiful",
-    "green",
-    "grass",
-    "idea",
-    "ideas",
-    "image",
-    "inspiration",
-    "light",
-    "natural",
-    "outdoor",
-    "outdoors",
-    "photo",
-    "photography",
-    "sunlight",
-    "tree",
-    "trees",
-  ]);
-  return [
-    analysis.title,
-    analysis.description,
-    analysis.primarySubject,
-    analysis.primaryCategory,
-    analysis.category,
-    analysis.eventType,
-    analysis.peopleCount,
-    ...(analysis.secondaryCategories || []),
-    ...(analysis.detectedTags || []),
-    ...(analysis.detectedObjects || analysis.objects || []),
-    ...(analysis.style || []),
-    ...(analysis.mood || []),
-    imageMetadata.title,
-    imageMetadata.description,
-    imageMetadata.caption,
-    imageMetadata.fileName,
-    imageMetadata.file_name,
-    imageMetadata.source,
-    ...(Array.isArray(imageMetadata.tags) ? imageMetadata.tags : String(imageMetadata.tags || "").split(",")),
-    ...(Array.isArray(imageMetadata.providerTags) ? imageMetadata.providerTags : String(imageMetadata.providerTags || "").split(",")),
-  ]
-    .join(" ")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 2 && !weakContextWords.has(word));
-}
-
-function priorityCategoryFromAnalysis(analysis = {}) {
-  const primary = String(analysis.primaryCategory || analysis.category || "").toLowerCase();
-  const subject = String(analysis.primarySubject || "").toLowerCase();
-  const objects = (analysis.detectedObjects || analysis.objects || []).map((item) => String(item).toLowerCase());
-  const tags = (analysis.detectedTags || []).map((item) => String(item).toLowerCase());
-  const hasAny = (...terms) => [primary, subject, ...objects, ...tags].some((value) => terms.some((term) => value.includes(term)));
-
-  if (analysis.isMusicOrConcert || hasAny("concert", "music", "festival", "stage", "singer", "band")) return "Concerts / Music Events";
-  if (analysis.isCampusOrFriends || hasAny("campus", "college", "university", "student", "friends", "group photo")) {
-    return "Campus Life / Friends";
-  }
-  if (analysis.isFashion || hasAny("fashion", "outfit", "dress", "streetwear", "clothing", "accessory")) return "Fashion";
-  if (analysis.isAnimal || hasAny("animal", "pet", "dog", "cat", "wildlife", "bird", "horse")) return "Animals";
-  if (analysis.isTech || hasAny("coding", "code", "dashboard", "laptop", "interface", "software", "tech")) return "Coding / Tech";
-  if (analysis.isFood || hasAny("food", "dessert", "drink", "meal", "recipe", "restaurant")) return "Food";
-  if (analysis.isAnimeOrIllustration || hasAny("anime", "manga", "illustration", "digital art", "character art")) {
-    return "Anime / Digital Art";
-  }
-  if (analysis.isVehicle || /^(vehicle|transportation|car|motorcycle|bike|bicycle|truck|bus)$/.test(primary)) return "Vehicles";
-  if (analysis.isInterior || hasAny("interior", "room", "furniture", "decor", "home")) return "Room Decor";
-  if (hasAny("flower", "forest", "mountain", "beach", "landscape", "plant", "garden", "nature")) return "Nature";
-  if (hasAny("sport", "fitness", "gym", "workout")) return "Fitness / Sports";
-  if (hasAny("architecture", "building", "city", "travel", "landmark")) return "Architecture / Travel";
-  if (hasAny("movie", "cinema", "film", "poster")) return "Movies / Cinema";
-  return null;
-}
-
-function getSuggestedBoardFromAnalysis(analysis = {}, imageMetadata = {}) {
-  const words = metadataWords(analysis, imageMetadata);
-  const wordSet = new Set(words);
-  const flagMatch = categoryBoardMap.find((category) => (category.flags || []).some((flag) => analysis[flag]));
-  const priorityName = priorityCategoryFromAnalysis(analysis);
-  const priorityCategory = priorityName ? categoryBoardMap.find((category) => category.name === priorityName) : null;
-  const primary = String(analysis.primaryCategory || analysis.category || "").toLowerCase();
-  const subject = String(analysis.primarySubject || "").toLowerCase();
-  const strictVehicle =
-    analysis.isVehicle ||
-    /^(vehicle|transportation|car|motorcycle|bike|bicycle|truck|bus)$/i.test(primary) ||
-    ["car", "vehicle", "motorcycle", "bicycle", "truck", "bus"].some((term) => subject.includes(term)) ||
-    (analysis.detectedObjects || analysis.objects || []).some((item) => /^(car|vehicle|motorcycle|bicycle|truck|bus)$/i.test(String(item)));
-  const scored = categoryBoardMap
-    .map((category) => ({
-      ...category,
-      score:
-        (flagMatch?.name === category.name ? 20 : 0) +
-        category.keywords.reduce((sum, keyword) => sum + (wordSet.has(keyword) ? 1 : 0), 0),
-    }))
-    .filter((category) => category.name !== "Vehicles" || strictVehicle)
-    .sort((a, b) => b.score - a.score);
-  const requested = normalizeName(analysis.suggestedBoardName || imageMetadata.suggestedBoardName || "");
-  const isGeneric = !requested || genericBoardNames.has(requested) || looksRandomToken(requested);
-  const category = scored[0]?.score > 0 ? scored[0] : null;
-
-  if (priorityCategory) {
-    return {
-      name: priorityCategory.name,
-      description: priorityCategory.description,
-      keywords: priorityCategory.keywords.slice(0, 10),
-      rejectedGenericName: isGeneric ? analysis.suggestedBoardName || imageMetadata.suggestedBoardName || null : null,
-    };
-  }
-
-  if (category && (isGeneric || scored[0].score >= 1)) {
-    return {
-      name: category.name,
-      description: category.description,
-      keywords: category.keywords.slice(0, 10),
-      rejectedGenericName: isGeneric ? analysis.suggestedBoardName || imageMetadata.suggestedBoardName || null : null,
-    };
-  }
-
-  if (!isGeneric) {
-    return {
-      name: analysis.suggestedBoardName || imageMetadata.suggestedBoardName,
-      description:
-        imageMetadata.boardDescription ||
-        `AI-created board for ${(analysis.detectedTags || words).slice(0, 5).join(", ")} inspiration.`,
-      keywords: [...new Set([...(analysis.detectedTags || []), ...words])].slice(0, 10),
-      rejectedGenericName: null,
-    };
-  }
-
-  return {
-    name: "Visual Inspiration",
-    description: "General visual inspiration that does not fit a more specific category yet.",
-    keywords: ["visual", "inspiration", ...words].slice(0, 10),
-    rejectedGenericName: analysis.suggestedBoardName || imageMetadata.suggestedBoardName || null,
-  };
-}
-
-function sanitizeBoardName(candidateName, analysis = {}, metadata = {}) {
-  const normalized = normalizeName(candidateName);
-  if (!normalized || genericBoardNames.has(normalized) || looksRandomToken(candidateName)) {
-    return getSuggestedBoardFromAnalysis(analysis, { ...metadata, suggestedBoardName: candidateName }).name;
-  }
-  return String(candidateName).trim();
-}
-
-function findReusableBoard(boards = [], suggestion) {
-  const suggestedName = normalizeName(suggestion.name);
-  const suggestedTokens = new Set(metadataWords({}, { tags: [suggestion.name, ...(suggestion.keywords || [])] }));
-
-  return boards.find((board) => {
-    const boardName = normalizeName(board.name);
-    if (!boardName) return false;
-    if (boardName === suggestedName || boardName.replace(/s$/, "") === suggestedName.replace(/s$/, "")) return true;
-    const boardTokens = new Set(metadataWords({}, { tags: [board.name, board.description, ...(board.tags || [])] }));
-    const overlap = [...suggestedTokens].filter((token) => boardTokens.has(token));
-    const aliasGroups = [
-      ["animals", "animal photography", "pets wildlife", "pets and wildlife"],
-      ["concerts music events", "music", "concerts", "music events"],
-      ["fashion", "outfits", "style"],
-      ["campus life friends", "friends", "college memories", "campus life"],
-      ["anime digital art", "anime", "digital art"],
-      ["coding tech", "coding", "tech", "ui design"],
-    ];
-    if (aliasGroups.some((group) => group.includes(boardName) && group.includes(suggestedName))) return true;
-    return overlap.length >= 2 || (overlap.length >= 1 && (boardName.includes(suggestedName) || suggestedName.includes(boardName)));
-  });
-}
-
-async function createAutonomousSave({ userId, body, analysis, decision, uploadResult = null }) {
-  const predictedScore = (decision.scores || []).find((score) => score.boardId === decision.predictedBoard?.id);
-  const predictedBoardIsSafe =
-    predictedScore &&
-    predictedScore.categoryCompatible !== false &&
-    Number(predictedScore.penalty || 0) < 32 &&
-    Number(predictedScore.categoryScore || 0) >= 45;
-  const saveToExisting =
-    decision.predictedBoard?.id && decision.confidence >= 0.78 && decision.action !== "suggest_new_board" && predictedBoardIsSafe;
-  if (saveToExisting) {
-    const createdPin = await createPin(
-      userId,
-      pinPayloadFromAi({ body, analysis, decision, boardId: decision.predictedBoard.id }),
-    );
-    return {
-      status: 201,
-      payload: {
-        action: "saved_to_existing_board",
-        confidence: decision.confidence,
-        analysis,
-        matchedBoard: decision.predictedBoard,
-        createdBoard: null,
-        createdPin,
-        pin: createdPin,
-        board: decision.predictedBoard,
-        image: uploadResult,
-        reasoning: decision.reasoning,
-        rejectedBoards: decision.scores || [],
-        undoTokenOrIds: { pinId: createdPin.id, boardId: createdPin.boardId, createdNewBoard: false },
-        debug:
-          process.env.NODE_ENV === "production"
-            ? undefined
-            : {
-                analysisSummary: `${analysis.primarySubject || ""} / ${analysis.primaryCategory || ""}`.trim(),
-                chosenBoardName: decision.predictedBoard.name,
-                reusedExistingBoard: true,
-                createdNewBoard: false,
-                topBoardScores: decision.scores || [],
-                rejectedBoardNames: (decision.scores || []).map((score) => score.boardName),
-                rejectedReasons: (decision.scores || []).map((score) => score.rejectedReason).filter(Boolean),
-                categoryDecision: decision.predictedBoard.name,
-                sanitizedBoardName: decision.predictedBoard.name,
-              },
-      },
-    };
-  }
-
-  const boards = await getBoards(userId);
-  const suggestion = getSuggestedBoardFromAnalysis(analysis, {
-    ...body,
-    suggestedBoardName: decision.suggestedBoardName,
-  });
-  suggestion.name = sanitizeBoardName(suggestion.name, analysis, body);
-  const reusableBoard = findReusableBoard(boards, suggestion);
-
-  if (reusableBoard) {
-    const createdPin = await createPin(userId, pinPayloadFromAi({ body, analysis, decision, boardId: reusableBoard.id }));
-    return {
-      status: 201,
-      payload: {
-        action: "saved_to_existing_board",
-        confidence: decision.confidence,
-        analysis,
-        matchedBoard: reusableBoard,
-        createdBoard: null,
-        createdPin,
-        pin: createdPin,
-        board: reusableBoard,
-        image: uploadResult,
-        reasoning: `Reused existing board "${reusableBoard.name}" because it matched the suggested category "${suggestion.name}".${
-          suggestion.rejectedGenericName ? ` Rejected generic board name "${suggestion.rejectedGenericName}".` : ""
-        }`,
-        rejectedBoards: decision.scores || [],
-        undoTokenOrIds: { pinId: createdPin.id, boardId: createdPin.boardId, createdNewBoard: false },
-        debug:
-          process.env.NODE_ENV === "production"
-            ? undefined
-            : {
-                analysisSummary: `${analysis.primarySubject || ""} / ${analysis.primaryCategory || ""}`.trim(),
-                chosenBoardName: reusableBoard.name,
-                reusedExistingBoard: true,
-                createdNewBoard: false,
-                rejectedBoardNames: (decision.scores || []).map((score) => score.boardName),
-                rejectedReasons: (decision.scores || []).map((score) => score.rejectedReason).filter(Boolean),
-                categoryDecision: suggestion.name,
-                sanitizedBoardName: suggestion.name,
-              },
-      },
-    };
-  }
-
-  const board = await createBoard(userId, {
-    name: suggestion.name,
-    description: suggestion.description || decision.suggestedBoardDescription,
-    tags: suggestion.keywords || decision.suggestedKeywords || analysis.detectedTags || [],
-    aesthetic: [...(analysis.style || []), ...(analysis.mood || [])].join(", ") || "AI-generated visual identity",
-    coverImageUrl: body.imageUrl || body.image_url || null,
-  });
-  const createdPin = await createPin(userId, pinPayloadFromAi({ body, analysis, decision, boardId: board.id }));
-
-  return {
-    status: 201,
-    payload: {
-      action: "created_new_board_and_saved",
-      confidence: decision.confidence,
-      analysis,
-      matchedBoard: null,
-      createdBoard: board,
-      createdPin,
-      pin: createdPin,
-      board,
-      image: uploadResult,
-      reasoning: `Created category board "${board.name}" for this image.${
-        suggestion.rejectedGenericName ? ` Rejected generic board name "${suggestion.rejectedGenericName}".` : ""
-      } ${decision.reasoning || ""}`.trim(),
-      rejectedBoards: decision.scores || [],
-      undoTokenOrIds: { pinId: createdPin.id, boardId: board.id, createdNewBoard: true },
-      debug:
-        process.env.NODE_ENV === "production"
-          ? undefined
-          : {
-              analysisSummary: `${analysis.primarySubject || ""} / ${analysis.primaryCategory || ""}`.trim(),
-              chosenBoardName: board.name,
-              reusedExistingBoard: false,
-              createdNewBoard: true,
-              rejectedBoardNames: (decision.scores || []).map((score) => score.boardName),
-              rejectedReasons: (decision.scores || []).map((score) => score.rejectedReason).filter(Boolean),
-              categoryDecision: suggestion.name,
-              sanitizedBoardName: board.name,
-            },
-    },
   };
 }
 
@@ -827,44 +144,9 @@ apiRouter.post("/ai/smart-save-upload", uploadSingleImage, async (req, res) => {
       source: "Supabase Storage upload",
       height: Number(req.body.height) || 580,
     };
-    const { analysis, decision } = await analyzeAndDecide(userId, body);
-    console.log(`[AI] Smart-save upload decision action=${decision.action} confidence=${decision.confidencePercent}`);
-
-    if (decision.action === "auto_save" && decision.predictedBoard?.id) {
-      const createdPin = await createPin(
-        userId,
-        pinPayloadFromAi({ body, analysis, decision, boardId: decision.predictedBoard.id }),
-      );
-      return res.status(201).json(
-        smartSaveResponse({
-          action: "auto_save",
-          analysis,
-          decision,
-          uploadResult,
-          createdPin,
-        }),
-      );
-    }
-
-    await savePrediction(null, {
-      ...decision,
-      userId,
-      predictedBoardId: decision.predictedBoard?.id,
-      selectedBoardId: null,
-      inputTitle: analysis.title,
-      inputCaption: analysis.description,
-      inputTags: analysis.detectedTags,
-      inputFileName: req.file.originalname,
-    });
-
-    return res.json(
-      smartSaveResponse({
-        action: decision.action,
-        analysis,
-        decision,
-        uploadResult,
-      }),
-    );
+    const result = await runSmartSaveService({ userId, input: body, uploadResult });
+    console.log(`[AI] Smart-save upload ${result.payload.action} confidence=${Math.round((result.payload.confidence || 0) * 100)}`);
+    return res.status(result.status).json(result.payload);
   } catch (error) {
     console.error("Failed to smart-save uploaded image", error);
     res.status(500).json({ message: error.message || "Unable to smart-save this image." });
@@ -891,9 +173,8 @@ apiRouter.post("/ai/autonomous-save-upload", uploadSingleImage, async (req, res)
       source: "Autonomous Smart Save",
       height: Number(req.body.height) || 580,
     };
-    const { analysis, decision } = await analyzeAndDecide(userId, body);
-    const result = await createAutonomousSave({ userId, body, analysis, decision, uploadResult });
-    console.log(`[AI] Autonomous save ${result.payload.action} confidence=${Math.round((decision.confidence || 0) * 100)}`);
+    const result = await runSmartSaveService({ userId, input: body, uploadResult });
+    console.log(`[AI] Autonomous save ${result.payload.action} confidence=${Math.round((result.payload.confidence || 0) * 100)}`);
     res.status(result.status).json(result.payload);
   } catch (error) {
     console.error("Failed to autonomous-save uploaded image", error);
@@ -908,20 +189,9 @@ apiRouter.post("/ai/autonomous-save-url", async (req, res) => {
     if (!imageUrl) return res.status(400).json({ message: "imageUrl is required." });
 
     console.log(`[AI] Autonomous save URL started for user ${userId}`);
-    const remoteImage = await fetchVerifiedRemoteImage(imageUrl);
-    const body = {
-      imageUrl,
-      imageBase64: remoteImage.buffer.toString("base64"),
-      mimeType: remoteImage.mimeType,
-      fileName: new URL(remoteImage.finalUrl || imageUrl).pathname.split("/").pop() || "remote-image",
-      source: "Image URL",
-      sourceUrl: imageUrl,
-      provider: "url",
-      height: Number(req.body.height) || 580,
-    };
-    const { analysis, decision } = await analyzeAndDecide(userId, body);
-    const result = await createAutonomousSave({ userId, body, analysis, decision });
-    console.log(`[AI] Autonomous URL save ${result.payload.action} confidence=${Math.round((decision.confidence || 0) * 100)}`);
+    const body = await normalizeUrlSmartSaveInput(imageUrl, req.body);
+    const result = await runSmartSaveService({ userId, input: body });
+    console.log(`[AI] Autonomous URL save ${result.payload.action} confidence=${Math.round((result.payload.confidence || 0) * 100)}`);
     res.status(result.status).json(result.payload);
   } catch (error) {
     const status = error.status || 500;
@@ -933,11 +203,10 @@ apiRouter.post("/ai/autonomous-save-url", async (req, res) => {
 apiRouter.post("/ai/autonomous-save", async (req, res) => {
   try {
     const userId = req.user.id;
-    const body = aiImagePayload(req.body);
+    const body = normalizeSmartSaveInput(req.body);
     if (!body.imageUrl) return res.status(400).json({ message: "imageUrl is required." });
 
-    const { analysis, decision } = await analyzeAndDecide(userId, body);
-    const result = await createAutonomousSave({ userId, body, analysis, decision });
+    const result = await runSmartSaveService({ userId, input: body });
     res.status(result.status).json(result.payload);
   } catch (error) {
     console.error("Failed to autonomous-save image", error);
@@ -948,11 +217,10 @@ apiRouter.post("/ai/autonomous-save", async (req, res) => {
 apiRouter.post("/ai/smart-save", async (req, res) => {
   try {
     const userId = req.user.id;
-    const body = aiImagePayload(req.body);
+    const body = normalizeSmartSaveInput(req.body);
     if (!body.imageUrl) return res.status(400).json({ message: "imageUrl is required." });
 
-    const { analysis, decision } = await analyzeAndDecide(userId, body);
-    const result = await createAutonomousSave({ userId, body, analysis, decision });
+    const result = await runSmartSaveService({ userId, input: body });
     res.status(result.status).json(result.payload);
   } catch (error) {
     console.error("Failed to smart-save image", error);
@@ -978,6 +246,21 @@ apiRouter.get("/library/search", async (req, res) => {
   } catch (error) {
     console.error("Failed to search image library", error);
     res.status(500).json({ message: "Unable to search the image library." });
+  }
+});
+
+apiRouter.get("/search/pins", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const result = await searchUserPins(userId, {
+      query: req.query.q || "",
+      page: req.query.page || 1,
+      limit: req.query.limit || 24,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("Failed to search pins", error);
+    res.status(500).json({ message: error.message || "Unable to search saved pins." });
   }
 });
 
@@ -1125,6 +408,29 @@ apiRouter.patch("/boards/:id/visibility", async (req, res) => {
   }
 });
 
+apiRouter.get("/boards/cleanup-suggestions", async (req, res) => {
+  try {
+    const suggestions = await getBoardCleanupSuggestions(req.user.id);
+    res.json({ suggestions });
+  } catch (error) {
+    console.error("Failed to get board cleanup suggestions", error);
+    res.status(500).json({ message: error.message || "Unable to load cleanup suggestions." });
+  }
+});
+
+apiRouter.post("/boards/merge", async (req, res) => {
+  try {
+    const result = await mergeUserBoards(req.user.id, {
+      sourceBoardId: req.body.sourceBoardId || req.body.source_board_id,
+      targetBoardId: req.body.targetBoardId || req.body.target_board_id,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("Failed to merge boards", error);
+    res.status(400).json({ message: error.message || "Unable to merge these boards." });
+  }
+});
+
 apiRouter.delete("/boards/:id", async (req, res) => {
   try {
     const result = await deleteBoard(req.user.id, req.params.id);
@@ -1133,6 +439,29 @@ apiRouter.delete("/boards/:id", async (req, res) => {
     if (error.message === "Board not found") return res.status(404).json({ message: "Board not found" });
     console.error("Failed to delete board", error);
     res.status(500).json({ message: "Unable to delete this board." });
+  }
+});
+
+apiRouter.get("/boards/:id/profile", async (req, res) => {
+  try {
+    const profile = await buildVisibleBoardIntelligenceProfile(req.user.id, req.params.id);
+    res.json({ profile });
+  } catch (error) {
+    console.error("Failed to get board intelligence profile", error);
+    res.status(error.status || (error.message === "Board not found" ? 404 : 500)).json({ message: error.message || "Unable to load board profile." });
+  }
+});
+
+apiRouter.get("/boards/:id/recommendations", async (req, res) => {
+  try {
+    const result = await getBoardBasedRecommendations(req.user.id, req.params.id, {
+      page: req.query.page || 1,
+      provider: req.query.provider || "all",
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("Failed to get board-based recommendations", error);
+    res.status(error.status || (error.message === "Board not found" ? 404 : 500)).json({ message: error.message || "Unable to load board recommendations." });
   }
 });
 
@@ -1180,8 +509,8 @@ apiRouter.post("/ai/predict-board", async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { analysis, decision } = await analyzeAndDecide(userId, req.body);
-    const prediction = legacyPredictionPayload(analysis, decision);
+    const { analysis, decision } = await analyzeSmartSaveInput(userId, req.body);
+    const prediction = serviceLegacyPredictionPayload(analysis, decision);
     console.log(`[AI] Prediction action=${decision.action} confidence=${decision.confidencePercent}`);
 
     await savePrediction(null, {
@@ -1206,7 +535,7 @@ apiRouter.post("/ai/analyze-image", async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const result = await analyzeAndDecide(userId, req.body);
+    const result = await analyzeSmartSaveInput(userId, req.body);
     console.log(`[Vision] Analysis action=${result.decision.action} confidence=${result.decision.confidencePercent}`);
     res.json(result);
   } catch (error) {
@@ -1219,14 +548,14 @@ apiRouter.post("/ai/auto-save", async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { analysis, decision } = await analyzeAndDecide(userId, req.body);
-    const prediction = legacyPredictionPayload(analysis, decision);
+    const { analysis, decision } = await analyzeSmartSaveInput(userId, req.body);
+    const prediction = serviceLegacyPredictionPayload(analysis, decision);
     console.log(`[AI] Auto-save decision action=${decision.action} confidence=${decision.confidencePercent}`);
 
     if (decision.action === "auto_save" && decision.predictedBoard?.id) {
       const pin = await createPin(
         userId,
-        pinPayloadFromAi({ body: req.body, analysis, decision, boardId: decision.predictedBoard.id }),
+        servicePinPayloadFromAi({ body: req.body, analysis, decision, boardId: decision.predictedBoard.id }),
       );
       return res.status(201).json({ action: "auto_save", analysis, decision, prediction, pin });
     }
@@ -1240,7 +569,7 @@ apiRouter.post("/ai/auto-save", async (req, res) => {
         confirmation: {
           boardId: decision.predictedBoard.id,
           boardName: decision.predictedBoard.name,
-          savePayload: pinPayloadFromAi({ body: req.body, analysis, decision, boardId: decision.predictedBoard.id }),
+          savePayload: servicePinPayloadFromAi({ body: req.body, analysis, decision, boardId: decision.predictedBoard.id }),
         },
       });
     }
@@ -1271,7 +600,7 @@ apiRouter.post("/ai/confirm-save", async (req, res) => {
 
     const analysis = req.body.analysis || {};
     const decision = req.body.decision || {};
-    const pin = await createPin(userId, pinPayloadFromAi({ body: req.body, analysis, decision, boardId: selectedBoardId }));
+    const pin = await createPin(userId, servicePinPayloadFromAi({ body: req.body, analysis, decision, boardId: selectedBoardId }));
     res.status(201).json({ pin });
   } catch (error) {
     console.error("Failed to confirm AI save", error);
@@ -1284,7 +613,9 @@ apiRouter.post("/ai/create-board-and-save", async (req, res) => {
     const userId = req.user.id;
 
     const analysis = req.body.analysis || {};
-    const boardName = req.body.boardName || req.body.board_name || req.body.suggestedBoardName || analysis.suggestedBoardName;
+    const rawBoardName = req.body.boardName || req.body.board_name || req.body.suggestedBoardName || analysis.suggestedBoardName;
+    const safeSuggestion = getSuggestedBoardFromAnalysis(analysis, { ...req.body, suggestedBoardName: rawBoardName });
+    const boardName = sanitizeBoardName(rawBoardName || safeSuggestion.name, analysis, req.body);
     if (!boardName?.trim()) return res.status(400).json({ message: "boardName is required." });
 
     const board = await createBoard(userId, {
@@ -1292,14 +623,15 @@ apiRouter.post("/ai/create-board-and-save", async (req, res) => {
       description:
         req.body.boardDescription ||
         req.body.board_description ||
+        safeSuggestion.description ||
         `AI-created board for ${(analysis.detectedTags || []).slice(0, 5).join(", ")} inspiration.`,
-      tags: req.body.boardKeywords || req.body.board_keywords || analysis.detectedTags || [],
+      tags: req.body.boardKeywords || req.body.board_keywords || safeSuggestion.keywords || analysis.detectedTags || [],
       aesthetic: [...(analysis.style || []), ...(analysis.mood || [])].join(", ") || "AI-generated visual identity",
       coverImageUrl: req.body.imageUrl || req.body.image_url || null,
     });
     const pin = await createPin(
       userId,
-      pinPayloadFromAi({ body: req.body, analysis, decision: req.body.decision || {}, boardId: board.id }),
+      servicePinPayloadFromAi({ body: req.body, analysis, decision: req.body.decision || {}, boardId: board.id }),
     );
 
     res.status(201).json({ board, pin });
@@ -1369,7 +701,7 @@ apiRouter.patch("/pins/:id/board", async (req, res, next) => {
     const userId = req.user.id;
 
     const pin = await movePin(userId, req.params.id, req.body.boardId);
-    res.json({ pin, corrections: [] });
+    res.json({ pin, corrections: [{ type: "ai_feedback", message: "Learning from your correction." }] });
   } catch (error) {
     if (error.message === "Board not found" || error.message === "Pin not found") {
       return res.status(404).json({ message: "Pin or board not found" });

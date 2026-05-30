@@ -475,6 +475,54 @@ function scoreBoard(profile, imageProfile) {
   };
 }
 
+function scoreFeedbackAdjustment(boardId, imageProfile, feedback = []) {
+  const imageSignals = new Set([
+    imageProfile.primaryCategory,
+    ...tokenize(imageProfile.primarySubject),
+    ...imageProfile.detectedTags,
+    ...imageProfile.detectedObjects,
+    ...imageProfile.keywords,
+  ]);
+  let adjustment = 0;
+  const reasons = [];
+
+  feedback.slice(0, 80).forEach((item) => {
+    const analysis = item.imageAnalysis || item.image_analysis || {};
+    const signals = [
+      analysis.primaryCategory,
+      analysis.primarySubject,
+      analysis.title,
+      analysis.caption,
+      analysis.description,
+      analysis.inputTitle,
+      analysis.inputCaption,
+      analysis.inputFileName,
+      ...(analysis.tags || []),
+      ...(analysis.detectedTags || []),
+      ...(analysis.detectedObjects || []),
+      ...(analysis.aiSignals || []),
+      ...(analysis.inputTags || []),
+    ].flatMap(tokenize);
+    const overlap = signals.filter((signal) => imageSignals.has(signal));
+    if (!overlap.length) return;
+
+    const amount = Math.min(0.035, 0.012 * overlap.length);
+    if (item.correctedBoardId === boardId || item.corrected_board_id === boardId) {
+      adjustment += amount;
+      reasons.push(`learned correction boosted ${overlap.slice(0, 3).join(", ")}`);
+    }
+    if (item.originalBoardId === boardId || item.original_board_id === boardId) {
+      adjustment -= amount;
+      reasons.push(`learned correction penalized ${overlap.slice(0, 3).join(", ")}`);
+    }
+  });
+
+  return {
+    adjustment: Math.max(-0.08, Math.min(0.08, adjustment)),
+    reasons: [...new Set(reasons)].slice(0, 3),
+  };
+}
+
 function actionForConfidence(confidence, winner) {
   if (!winner || !winner.categoryCompatible || winner.categoryScore < 0.45 || winner.penalty >= 0.32) return "suggest_new_board";
   if (confidence >= AUTO_SAVE_THRESHOLD) return "auto_save";
@@ -496,12 +544,15 @@ function suggestBoardName(imageProfile, detectedTags) {
   if (imageProfile.flags.isMusicOrConcert) return "Concerts / Music Events";
   if (imageProfile.flags.isCampusOrFriends) return "Campus Life / Friends";
   if (imageProfile.flags.isVehicle) return "Vehicles";
-  if (imageProfile.flags.isAnimeOrIllustration) return "Anime Aesthetic";
-  if (imageProfile.flags.isTech) return "Coding & UI Ideas";
-  if (imageProfile.flags.isFood) return "Recipe Ideas";
-  if (imageProfile.flags.isFashion) return "Outfit Ideas";
-  if (imageProfile.flags.isInterior) return "Room Decor Ideas";
-  return `${prettyWords(imageProfile.primarySubject || detectedTags[0] || imageProfile.primaryCategory)} Ideas`;
+  if (imageProfile.flags.isAnimeOrIllustration) return "Anime / Digital Art";
+  if (imageProfile.flags.isTech) return "Coding / Tech";
+  if (imageProfile.flags.isFood) return "Food";
+  if (imageProfile.flags.isFashion) return "Fashion";
+  if (imageProfile.flags.isInterior) return "Room Decor";
+  if (detectedTags.some((tag) => ["flower", "forest", "mountain", "beach", "landscape", "plant", "nature"].includes(tag))) {
+    return "Nature";
+  }
+  return "Visual Inspiration";
 }
 
 function suggestBoardDescription(imageProfile, detectedTags) {
@@ -539,7 +590,7 @@ function debugReasoning(action, winner, scores, imageProfile) {
   return rejected ? `${base} Rejected alternatives: ${rejected}.` : base;
 }
 
-export function analyzeImageForBoards({ boards = [], pins = [], predictions = [], image = {} }) {
+export function analyzeImageForBoards({ boards = [], pins = [], predictions = [], feedback = [], image = {} }) {
   const imageProfile = getImageProfile(image);
   const detectedTags = [
     ...new Set([
@@ -570,7 +621,42 @@ export function analyzeImageForBoards({ boards = [], pins = [], predictions = []
   }
 
   const profiles = boards.map((board) => buildBoardProfile(board, pins.filter((pin) => pin.boardId === board.id), predictions));
-  const scores = profiles.map((profile) => scoreBoard(profile, imageProfile)).sort((a, b) => b.score - a.score);
+  const scores = profiles
+    .map((profile) => {
+      const scored = scoreBoard(profile, imageProfile);
+      const learned = scoreFeedbackAdjustment(profile.boardId, imageProfile, feedback);
+      const preferredAdjustment =
+        image.preferredBoardId === profile.boardId && scored.categoryCompatible !== false && scored.categoryScore >= 0.45 ? 0.035 : 0;
+      return {
+        ...scored,
+        score: Math.max(0, Math.min(0.98, scored.score + learned.adjustment + preferredAdjustment)),
+        feedbackAdjustment: learned.adjustment,
+        feedbackReasons: [
+          ...learned.reasons,
+          ...(preferredAdjustment ? ["board recommendation context nudged this board"] : []),
+        ],
+        recommendationAdjustment: preferredAdjustment,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+  if (process.env.NODE_ENV !== "production") {
+    const influenced = scores
+      .filter((score) => Math.abs(score.feedbackAdjustment || 0) > 0)
+      .slice(0, 3)
+      .map((score) => ({
+        board: score.boardName || score.board?.name,
+        adjustment: Number(score.feedbackAdjustment.toFixed(3)),
+        reasons: score.feedbackReasons,
+      }));
+    if (influenced.length) {
+      console.log("[SmartSave:feedback]", {
+        primaryCategory: imageProfile.primaryCategory,
+        primarySubject: imageProfile.primarySubject,
+        influenced,
+        note: "Feedback is capped and cannot overpower category compatibility gates.",
+      });
+    }
+  }
   const winner = scores[0];
   const second = scores[1];
   const margin = winner.score - (second?.score || 0);
@@ -615,6 +701,8 @@ export function analyzeImageForBoards({ boards = [], pins = [], predictions = []
       categoryCompatible: item.categoryCompatible,
       penalty: Math.round(item.penalty * 100),
       penaltyReasons: item.penaltyReasons,
+      feedbackAdjustment: Math.round((item.feedbackAdjustment || 0) * 100),
+      feedbackReasons: item.feedbackReasons || [],
       matchedSignals: item.matchedSignals,
       rejectedReason: item.rejectedReason,
       visualIdentity: item.visualIdentity,

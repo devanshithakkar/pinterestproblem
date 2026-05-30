@@ -60,6 +60,19 @@ function mapProfile(row, { includePrivate = false } = {}) {
   return profile;
 }
 
+function mapPublicProfile(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    bio: row.bio,
+    interests: row.interests || [],
+    profileVisibility: row.profile_visibility || "private",
+  };
+}
+
 function mapPin(row) {
   return {
     id: row.id,
@@ -96,6 +109,18 @@ function mapPrediction(row) {
     inputDominantColor: row.input_dominant_color,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapFeedback(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    pinId: row.pin_id,
+    originalBoardId: row.original_board_id,
+    correctedBoardId: row.corrected_board_id,
+    imageAnalysis: row.image_analysis || {},
+    createdAt: row.created_at,
   };
 }
 
@@ -264,7 +289,7 @@ export async function searchPublicUsers({ query = "", page = 1, limit = 20 } = {
   const { data, error, count } = await request;
   if (error) throw new Error(`Supabase search users failed: ${error.message}`);
   return {
-    users: (data || []).map((row) => mapProfile(row)),
+    users: (data || []).map((row) => mapPublicProfile(row)),
     pagination: { page: Math.max(1, Number(page) || 1), limit: safeLimit, total: count || 0 },
   };
 }
@@ -467,7 +492,7 @@ export async function getPins(userId) {
 export async function getAiTrainingData(userId) {
   requireValue(userId, "userId");
 
-  const [boards, pins, predictions] = await Promise.all([
+  const [boards, pins, predictions, feedback] = await Promise.all([
     getBoards(userId),
     supabaseAdmin
       .from("pins")
@@ -482,10 +507,20 @@ export async function getAiTrainingData(userId) {
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(300),
+    supabaseAdmin
+      .from("ai_feedback")
+      .select("id, pin_id, original_board_id, corrected_board_id, image_analysis, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(300)
+      .then((result) =>
+        result.error?.code === "42P01" || result.error?.code === "PGRST205" ? { data: [], error: null } : result,
+      ),
   ]);
 
   const pinRows = assertSupabaseResult(pins, "get AI pin signals");
   const predictionRows = assertSupabaseResult(predictions, "get AI prediction signals");
+  const feedbackRows = assertSupabaseResult(feedback, "get AI feedback signals");
   const predictionsByPinId = predictionRows.reduce((groups, prediction) => {
     if (!prediction.pin_id) return groups;
     groups[prediction.pin_id] ||= [];
@@ -518,6 +553,7 @@ export async function getAiTrainingData(userId) {
       inputFileName: prediction.input_file_name,
       createdAt: prediction.created_at,
     })),
+    feedback: feedbackRows.map(mapFeedback),
   };
 }
 
@@ -579,6 +615,12 @@ export async function movePin(userId, pinId, boardId) {
     throw new Error("Board not found");
   }
 
+  const existingPin = assertSupabaseResult(
+    await supabaseAdmin.from("pins").select("*").eq("user_id", userId).eq("id", pinId).maybeSingle(),
+    "get pin before move",
+  );
+  if (!existingPin) throw new Error("Pin not found");
+
   const pin = assertSupabaseResult(
     await supabaseAdmin
       .from("pins")
@@ -594,7 +636,111 @@ export async function movePin(userId, pinId, boardId) {
     throw new Error("Pin not found");
   }
 
+  if (existingPin.board_id !== boardId) {
+    try {
+      const latestPrediction = assertSupabaseResult(
+        await supabaseAdmin
+          .from("ai_predictions")
+          .select("signals, scores, explanation, input_title, input_caption, input_tags, input_file_name, confidence, created_at")
+          .eq("user_id", userId)
+          .eq("pin_id", pinId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        "get pin prediction before feedback",
+      );
+      await saveAiFeedback(userId, {
+        pinId,
+        originalBoardId: existingPin.board_id,
+        correctedBoardId: boardId,
+        imageAnalysis: {
+          title: existingPin.title,
+          caption: existingPin.caption,
+          tags: existingPin.tags || [],
+          source: existingPin.source,
+          aiSignals: latestPrediction?.signals || [],
+          aiScores: latestPrediction?.scores || [],
+          aiExplanation: latestPrediction?.explanation || "",
+          inputTitle: latestPrediction?.input_title || "",
+          inputCaption: latestPrediction?.input_caption || "",
+          inputTags: latestPrediction?.input_tags || [],
+          inputFileName: latestPrediction?.input_file_name || "",
+          confidence: latestPrediction?.confidence || null,
+        },
+      });
+    } catch (error) {
+      console.warn("Pin moved, but AI feedback was not saved.", error.message);
+    }
+  }
+
   return mapPin(pin);
+}
+
+export async function saveAiFeedback(userId, feedbackData = {}) {
+  requireValue(userId, "userId");
+  requireValue(feedbackData.pinId || feedbackData.pin_id, "pinId");
+  requireValue(feedbackData.correctedBoardId || feedbackData.corrected_board_id, "correctedBoardId");
+
+  const row = {
+    user_id: userId,
+    pin_id: feedbackData.pinId || feedbackData.pin_id,
+    original_board_id: feedbackData.originalBoardId || feedbackData.original_board_id || null,
+    corrected_board_id: feedbackData.correctedBoardId || feedbackData.corrected_board_id,
+    image_analysis: feedbackData.imageAnalysis || feedbackData.image_analysis || {},
+  };
+
+  const result = await supabaseAdmin.from("ai_feedback").insert(row).select("*").single();
+  if (result.error?.code === "42P01" || result.error?.code === "PGRST205") {
+    throw new Error("ai_feedback table is not available. Run Supabase migrations.");
+  }
+  return mapFeedback(assertSupabaseResult(result, "save AI feedback"));
+}
+
+export async function mergeBoards(userId, sourceBoardId, targetBoardId) {
+  requireValue(userId, "userId");
+  requireValue(sourceBoardId, "sourceBoardId");
+  requireValue(targetBoardId, "targetBoardId");
+  if (sourceBoardId === targetBoardId) throw new Error("Choose two different boards to merge.");
+
+  const [sourceBoard, targetBoard] = await Promise.all([getOwnedBoard(userId, sourceBoardId), getOwnedBoard(userId, targetBoardId)]);
+  if (!sourceBoard || !targetBoard) throw new Error("Board not found");
+
+  const movedPins = assertSupabaseResult(
+    await supabaseAdmin
+      .from("pins")
+      .update({ board_id: targetBoardId, corrected_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("board_id", sourceBoardId)
+      .select("*"),
+    "merge board pins",
+  );
+
+  const remainingPins = assertSupabaseResult(
+    await supabaseAdmin
+      .from("pins")
+      .select("id", { count: "exact" })
+      .eq("user_id", userId)
+      .eq("board_id", sourceBoardId)
+      .limit(1),
+    "check source board after merge",
+  );
+  if (remainingPins.length) {
+    throw new Error("Source board still has pins after merge. Please try again.");
+  }
+
+  const deletedRow = assertSupabaseResult(
+    await supabaseAdmin.from("boards").delete().eq("user_id", userId).eq("id", sourceBoardId).select("id, name").maybeSingle(),
+    "delete merged source board",
+  );
+  if (!deletedRow) throw new Error("Source board could not be deleted after merge.");
+
+  return {
+    sourceBoardId,
+    targetBoardId,
+    movedPinCount: movedPins.length,
+    deletedBoard: { id: deletedRow.id, name: deletedRow.name },
+    message: `Moved ${movedPins.length} pin${movedPins.length === 1 ? "" : "s"} and removed the empty source board.`,
+  };
 }
 
 export async function updatePin(userId, pinId, pinData = {}) {

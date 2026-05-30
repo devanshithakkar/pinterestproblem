@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabaseClient";
 
 const navItems = [
   { id: "organizer", label: "Smart organizer", icon: Home, color: "text-white" },
+  { id: "search", label: "Visual search", icon: Search, color: "text-ember" },
   { id: "explore", label: "Explore library", icon: Images, color: "text-ember" },
   { id: "users", label: "Explore users", icon: Users, color: "text-moss" },
   { id: "overview", label: "Board overview", icon: LayoutGrid, color: "text-ember" },
@@ -111,7 +112,6 @@ export default function BoardSidebar({
             key={board.id}
             onClick={() => {
               onSelectBoard(board.id);
-              onViewChange("organizer");
             }}
             className={`group flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left ${
               activeBoardId === board.id

@@ -109,18 +109,29 @@ async function autonomousSaveUpload(file) {
 export const api = {
   getMe: () => request("/api/me"),
   updateProfile: (payload) => request("/api/me/profile", { method: "PATCH", body: JSON.stringify(payload) }),
-  searchUsers: ({ query = "", page = 1 } = {}) => {
-    const params = new URLSearchParams({ q: query, page: String(page) });
+  searchUsers: ({ query = "", page = 1, limit = 20 } = {}) => {
+    const params = new URLSearchParams({ q: query, page: String(page), limit: String(limit) });
     return request(`/api/users?${params.toString()}`);
   },
   getPublicProfile: (username) => request(`/api/users/${encodeURIComponent(username)}`),
   getPublicUserBoards: (username) => request(`/api/users/${encodeURIComponent(username)}/boards`),
   getPublicUserBoard: (username, boardId) => request(`/api/users/${encodeURIComponent(username)}/boards/${boardId}`),
+  searchPins: ({ query = "", page = 1, limit = 24 } = {}) => {
+    const params = new URLSearchParams({ q: query, page: String(page), limit: String(limit) });
+    return request(`/api/search/pins?${params.toString()}`);
+  },
   getBoards: () => request("/api/boards"),
   createBoard: (payload) => request("/api/boards", { method: "POST", body: JSON.stringify(payload) }),
   updateBoard: (boardId, payload) => request(`/api/boards/${boardId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   updateBoardVisibility: (boardId, visibility) =>
     request(`/api/boards/${boardId}/visibility`, { method: "PATCH", body: JSON.stringify({ visibility }) }),
+  getBoardProfile: (boardId) => request(`/api/boards/${boardId}/profile`),
+  getBoardCleanupSuggestions: () => request("/api/boards/cleanup-suggestions"),
+  mergeBoards: (payload) => request("/api/boards/merge", { method: "POST", body: JSON.stringify(payload) }),
+  getBoardRecommendations: ({ boardId, page = 1, provider = "all" }) => {
+    const params = new URLSearchParams({ page: String(page), provider });
+    return request(`/api/boards/${boardId}/recommendations?${params.toString()}`);
+  },
   deleteBoard: (boardId) => request(`/api/boards/${boardId}`, { method: "DELETE" }),
   getBoard: (id) => request(`/api/boards/${id}`),
   searchLibrary: ({ query, provider = "pexels", page = 1 }) => {

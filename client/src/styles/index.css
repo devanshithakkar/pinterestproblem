@@ -30,6 +30,20 @@ body {
     linear-gradient(135deg, #fffaf7 0%, #fff4ef 48%, #f7fbff 100%);
 }
 
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: "";
+  opacity: 0.28;
+  background-image:
+    linear-gradient(rgba(23, 20, 18, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 20, 18, 0.04) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, black, transparent 78%);
+}
+
 button,
 input,
 textarea,
@@ -101,6 +115,17 @@ img {
     0 24px 70px rgba(35, 28, 24, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(22px);
+}
+
+.premium-card {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.48)),
+    rgba(255, 255, 255, 0.56);
+  box-shadow:
+    0 16px 50px rgba(23, 20, 18, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.74);
+  backdrop-filter: blur(18px);
 }
 
 .ai-gradient {

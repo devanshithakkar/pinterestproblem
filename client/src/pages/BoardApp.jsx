@@ -4,12 +4,12 @@ import {
   Home,
   Globe2,
   Images,
-  LayoutGrid,
   LogOut,
   Lock,
   Menu,
   Pencil,
   Plus,
+  Search,
   Settings,
   Sparkles,
   Trash2,
@@ -22,6 +22,8 @@ import { supabase } from "../lib/supabaseClient";
 import BoardSidebar from "../components/BoardSidebar";
 import BoardCardGrid from "../components/BoardCardGrid";
 import BoardSkeleton from "../components/BoardSkeleton";
+import BoardIntelligencePanel from "../components/BoardIntelligencePanel";
+import BoardRecommendations from "../components/BoardRecommendations";
 import CreateBoardModal from "../components/CreateBoardModal";
 import ExploreLibrary from "../components/ExploreLibrary";
 import ExploreUsers from "../components/ExploreUsers";
@@ -29,7 +31,9 @@ import MasonryGrid from "../components/MasonryGrid";
 import PinPreviewModal from "../components/PinPreviewModal";
 import ProfileSettingsModal from "../components/ProfileSettingsModal";
 import RecommendationStrip from "../components/RecommendationStrip";
+import SmartCleanupPanel from "../components/SmartCleanupPanel";
 import UploadModal from "../components/UploadModal";
+import VisualSearchPanel from "../components/VisualSearchPanel";
 
 export default function BoardApp({
   boards,
@@ -51,14 +55,17 @@ export default function BoardApp({
   const [pendingVisibilityBoardId, setPendingVisibilityBoardId] = useState("");
   const [mobileBoardsOpen, setMobileBoardsOpen] = useState(false);
   const [localError, setLocalError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
   const [activeView, setActiveView] = useState("organizer");
+  const [boardMode, setBoardMode] = useState("grid");
   const [previewPin, setPreviewPin] = useState(null);
   const loadRequestId = useRef(0);
+  const showFocusedBoard = activeView === "organizer" && boardMode === "detail" && Boolean(activeBoardId);
   const mobileNavItems = [
     { id: "organizer", label: "Boards", icon: Home },
+    { id: "search", label: "Search", icon: Search },
     { id: "explore", label: "Explore", icon: Images },
     { id: "users", label: "People", icon: Users },
-    { id: "overview", label: "Overview", icon: LayoutGrid },
     { id: "suggestions", label: "AI", icon: WandSparkles },
   ];
 
@@ -85,6 +92,36 @@ export default function BoardApp({
     loadBoard();
   }, [activeBoardId]);
 
+  useEffect(() => {
+    if (boardMode === "detail" && activeBoardId && !boards.some((board) => board.id === activeBoardId)) {
+      setBoardMode("grid");
+    }
+  }, [activeBoardId, boardMode, boards]);
+
+  function scrollMainToTop() {
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  function openBoardDetail(boardId) {
+    if (!boardId) return;
+    setActiveView("organizer");
+    setBoardMode("detail");
+    onSelectBoard(boardId);
+    scrollMainToTop();
+  }
+
+  function backToBoards() {
+    setBoardMode("grid");
+    scrollMainToTop();
+  }
+
+  function changeView(viewId) {
+    setActiveView(viewId);
+    if (viewId === "organizer") setBoardMode("grid");
+  }
+
   async function refresh(preferredBoardId = activeBoardId) {
     await onBoardsChange(preferredBoardId);
     await loadBoard(preferredBoardId);
@@ -104,9 +141,11 @@ export default function BoardApp({
 
   async function movePin(pinId, boardId) {
     setLocalError("");
+    setStatusMessage("");
     try {
       await api.movePin(pinId, boardId);
       await refresh(boardId);
+      setStatusMessage("Learning from your correction.");
     } catch (err) {
       setLocalError(err.message || "Unable to move this pin.");
     }
@@ -117,10 +156,12 @@ export default function BoardApp({
     const visibility = board.visibility === "public" ? "private" : "public";
     setPendingVisibilityBoardId(board.id);
     setLocalError("");
+    setStatusMessage("");
     try {
       const { board: updatedBoard } = await api.updateBoardVisibility(board.id, visibility);
       await onBoardCreated(updatedBoard);
       if (updatedBoard.id === activeBoardId) await loadBoard(updatedBoard.id);
+      setStatusMessage(`"${updatedBoard.name}" is now ${updatedBoard.visibility}.`);
     } catch (err) {
       setLocalError(err.message || "Unable to update board visibility.");
     } finally {
@@ -158,6 +199,7 @@ export default function BoardApp({
     try {
       await api.deleteBoard(activeBoard.id);
       setPins([]);
+      setBoardMode("grid");
       await onBoardsChange();
     } catch (err) {
       setLocalError(err.message || "Unable to delete this board.");
@@ -204,8 +246,8 @@ export default function BoardApp({
         boards={boards}
         activeBoardId={activeBoardId}
         activeView={activeView}
-        onViewChange={setActiveView}
-        onSelectBoard={onSelectBoard}
+        onViewChange={changeView}
+        onSelectBoard={openBoardDetail}
         onCreateBoard={() => setShowCreateBoard(true)}
         onProfileSettings={() => setShowProfileSettings(true)}
         onBackHome={onBackHome}
@@ -227,10 +269,26 @@ export default function BoardApp({
               </button>
               <div className="min-w-0">
                 <p className="truncate text-xs font-black uppercase text-ember">
-                  {activeView === "explore" ? "Image discovery" : activeView === "users" ? "User discovery" : "Smart board"}
+                  {activeView === "explore"
+                    ? "Image discovery"
+                    : activeView === "users"
+                      ? "User discovery"
+                      : activeView === "search"
+                        ? "Visual memory"
+                        : showFocusedBoard
+                          ? "Smart board"
+                          : "Board studio"}
                 </p>
                 <h1 className="truncate text-2xl font-black sm:text-4xl">
-                  {activeView === "explore" ? "Explore" : activeView === "users" ? "People" : activeBoard?.name || "Boards"}
+                  {activeView === "explore"
+                    ? "Explore"
+                    : activeView === "users"
+                      ? "People"
+                      : activeView === "search"
+                        ? "Search"
+                        : showFocusedBoard
+                          ? activeBoard?.name || "Board"
+                          : "Board Studio"}
                 </h1>
               </div>
             </div>
@@ -293,7 +351,7 @@ export default function BoardApp({
                 <button
                   key={board.id}
                   onClick={() => {
-                    onSelectBoard(board.id);
+                    openBoardDetail(board.id);
                     setMobileBoardsOpen(false);
                   }}
                   className={`rounded-2xl px-3 py-3 text-left text-sm font-black shadow-sm ring-1 ring-white/70 backdrop-blur-xl ${
@@ -309,10 +367,21 @@ export default function BoardApp({
 
         <div className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:pb-6">
           {error || localError ? <div className="mb-4 rounded-2xl bg-blush p-4 font-bold text-ember">{localError || error}</div> : null}
+          {statusMessage ? <div className="mb-4 rounded-2xl bg-moss/10 p-4 font-bold text-moss">{statusMessage}</div> : null}
 
-          {activeView !== "explore" && activeView !== "users" ? (
+          {showFocusedBoard || activeView === "suggestions" || activeView === "overview" ? (
             <section className="mb-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
               <div className="glass-panel p-5">
+                {showFocusedBoard ? (
+                  <button
+                    type="button"
+                    onClick={backToBoards}
+                    className="mb-4 inline-flex items-center gap-2 rounded-2xl bg-white/70 px-3 py-2 text-sm font-black text-black/55 shadow-sm ring-1 ring-white/70"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Back to Boards
+                  </button>
+                ) : null}
                 <p className="text-sm font-black uppercase text-ember">{activeBoard?.pinCount ?? pins.length} saved pins</p>
                 <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black ${activeBoard?.visibility === "public" ? "bg-moss/10 text-moss" : "bg-black/5 text-black/45"}`}>
                   {activeBoard?.visibility === "public" ? "Public board" : "Private board"}
@@ -376,22 +445,38 @@ export default function BoardApp({
 
           {activeView === "explore" ? (
             <ExploreLibrary boards={boards} onSaved={handlePinSaved} onBoardCreated={onBoardCreated} />
+          ) : activeView === "search" ? (
+            <VisualSearchPanel boards={boards} onPreviewPin={setPreviewPin} />
           ) : activeView === "users" ? (
             <ExploreUsers />
-          ) : loadingBoard ? (
+          ) : loadingBoard && (showFocusedBoard || activeView === "suggestions") ? (
             <BoardSkeleton />
           ) : (
             <>
-              {activeView === "organizer" || activeView === "overview" ? (
+              {activeView === "organizer" && boardMode === "grid" ? (
                 <BoardCardGrid
                   boards={boards}
-                  activeBoardId={activeBoardId}
-                  onSelectBoard={onSelectBoard}
+                  activeBoardId={null}
+                  onSelectBoard={openBoardDetail}
                   onToggleVisibility={toggleBoardVisibility}
                   pendingVisibilityBoardId={pendingVisibilityBoardId}
                 />
               ) : null}
-              {activeView === "organizer" ? (
+              {activeView === "overview" ? (
+                <BoardCardGrid
+                  boards={boards}
+                  activeBoardId={activeBoardId}
+                  onSelectBoard={openBoardDetail}
+                  onToggleVisibility={toggleBoardVisibility}
+                  pendingVisibilityBoardId={pendingVisibilityBoardId}
+                />
+              ) : null}
+              {showFocusedBoard && activeBoardId ? (
+                <div className="mb-6">
+                  <BoardIntelligencePanel boardId={activeBoardId} />
+                </div>
+              ) : null}
+              {showFocusedBoard ? (
                 <MasonryGrid
                   pins={pins}
                   boards={boards}
@@ -402,8 +487,28 @@ export default function BoardApp({
                   onPreviewPin={setPreviewPin}
                 />
               ) : null}
-              {activeView === "organizer" || activeView === "suggestions" ? (
+              {showFocusedBoard && activeBoardId ? (
+                <BoardRecommendations
+                  boardId={activeBoardId}
+                  onSaved={handlePinSaved}
+                  onBoardCreated={onBoardCreated}
+                />
+              ) : null}
+              {showFocusedBoard || activeView === "suggestions" ? (
                 <RecommendationStrip recommendations={recommendations} />
+              ) : null}
+              {activeView === "suggestions" ? (
+                <div className="mt-8 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+                  <BoardIntelligencePanel boardId={activeBoardId} />
+                  <SmartCleanupPanel onMerged={refresh} />
+                </div>
+              ) : null}
+              {activeView === "suggestions" && activeBoardId ? (
+                <BoardRecommendations
+                  boardId={activeBoardId}
+                  onSaved={handlePinSaved}
+                  onBoardCreated={onBoardCreated}
+                />
               ) : null}
               {activeView === "suggestions" && !recommendations.length ? (
                 <div className="rounded-[2rem] border border-dashed border-black/15 bg-white p-10 text-center">
@@ -445,7 +550,7 @@ export default function BoardApp({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setActiveView(item.id)}
+                onClick={() => changeView(item.id)}
                 className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[11px] font-black ${
                   active ? "bg-ink text-white" : "text-black/50"
                 }`}

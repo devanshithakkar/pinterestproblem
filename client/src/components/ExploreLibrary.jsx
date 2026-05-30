@@ -1,7 +1,8 @@
-import { CheckCircle2, ExternalLink, Loader2, Search, Sparkles, Upload } from "lucide-react";
+import { CheckCircle2, ExternalLink, Search, Sparkles, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import ConfidenceBadge from "./ConfidenceBadge";
+import { Badge, Button, EmptyState, FieldShell, SkeletonBlock } from "./ui";
 
 export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
   const [query, setQuery] = useState("desk setup");
@@ -170,7 +171,7 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
         <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h2 className="max-w-2xl text-3xl font-black">Search visual inspiration and Smart Save without manual sorting.</h2>
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] lg:w-[34rem]">
-            <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/70 bg-white/70 px-3 py-2 shadow-sm">
+            <FieldShell>
               <Search className="h-4 w-4 text-black/40" />
               <input
                 value={query}
@@ -178,11 +179,11 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
                 className="w-full bg-transparent text-sm font-semibold outline-none"
                 placeholder="Search image library..."
               />
-            </div>
+            </FieldShell>
             <select
               value={provider}
               onChange={(event) => setProvider(event.target.value)}
-              className="rounded-2xl border border-white/70 bg-white/70 px-3 py-2 text-sm font-black shadow-sm outline-none"
+              className="rounded-2xl border border-white/70 bg-white/74 px-3 py-2 text-sm font-black shadow-sm outline-none ring-1 ring-white/60"
               aria-label="Image provider"
             >
               <option value="pexels">Pexels</option>
@@ -285,41 +286,46 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
       {loading ? (
         <div className="columns-1 gap-4 sm:columns-2 xl:columns-3 2xl:columns-4">
           {Array.from({ length: 12 }, (_, index) => (
-            <div key={index} className="mb-4 h-72 break-inside-avoid rounded-[1.5rem] bg-white/65 shadow-sm ring-1 ring-white/70">
-              <div className="h-full animate-pulse rounded-[1.5rem] bg-black/5" />
-            </div>
+            <SkeletonBlock key={index} className="mb-4 h-72 break-inside-avoid" />
           ))}
         </div>
       ) : (
         <div className="columns-1 gap-4 sm:columns-2 xl:columns-3 2xl:columns-4">
           {images.map((image) => (
-            <article key={`${image.provider}-${image.id}`} className="mb-4 break-inside-avoid overflow-hidden rounded-[1.5rem] bg-white shadow-sm ring-1 ring-black/5">
-              <img
-                src={image.thumbnailUrl}
-                alt={image.title}
-                loading="lazy"
-                className="w-full bg-blush object-cover"
-                style={{ aspectRatio: `${image.width || 4} / ${image.height || 5}` }}
-              />
+            <article key={`${image.provider}-${image.id}`} className="group mb-4 break-inside-avoid overflow-hidden rounded-[1.6rem] border border-white/70 bg-white/72 shadow-sm backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift">
+              <div className="relative overflow-hidden bg-blush">
+                <img
+                  src={image.thumbnailUrl}
+                  alt={image.title}
+                  loading="lazy"
+                  className="w-full object-cover transition duration-500 group-hover:scale-105"
+                  style={{ aspectRatio: `${image.width || 4} / ${image.height || 5}` }}
+                />
+                <div className="absolute left-3 top-3">
+                  <Badge tone={image.provider === "unsplash" ? "dark" : "ember"}>{image.provider}</Badge>
+                </div>
+              </div>
               <div className="space-y-3 p-4">
                 <div>
                   <h3 className="line-clamp-2 font-black">{image.title}</h3>
                   <p className="mt-1 text-xs font-bold text-black/45">by {image.authorName || image.provider}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button
+                  <Button
                     onClick={() => smartSaveImage(image)}
                     disabled={Boolean(savingId)}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink px-3 py-2.5 text-sm font-black text-white disabled:opacity-45"
+                    className="flex-1"
+                    variant="dark"
+                    loading={savingId === image.id}
+                    icon={Sparkles}
                   >
-                    {savingId === image.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                     Smart Save
-                  </button>
+                  </Button>
                   <a
                     href={image.sourceUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="grid h-10 w-10 place-items-center rounded-2xl bg-blush text-ember"
+                    className="grid h-11 w-11 place-items-center rounded-2xl bg-blush text-ember"
                     aria-label={`Open ${image.provider} source`}
                   >
                     <ExternalLink className="h-4 w-4" />
@@ -332,22 +338,19 @@ export default function ExploreLibrary({ boards, onSaved, onBoardCreated }) {
       )}
 
       {!loading && !images.length ? (
-        <div className="rounded-[2rem] border border-dashed border-black/15 bg-white p-10 text-center">
-          <p className="text-lg font-black">No images found</p>
-          <p className="mt-2 text-sm font-semibold text-black/50">Try a broader search like workspace, recipes, outfits, or room decor.</p>
-        </div>
+        <EmptyState title="No images found" description="Try a broader search like workspace, recipes, outfits, or room decor." />
       ) : null}
 
       {pagination?.hasMore ? (
         <div className="flex justify-center">
-          <button
+          <Button
             onClick={() => loadImages({ nextPage: page + 1, replace: false })}
             disabled={loadingMore}
-            className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-black shadow-sm ring-1 ring-black/10 disabled:opacity-45"
+            variant="ghost"
+            loading={loadingMore}
           >
-            {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Load More
-          </button>
+          </Button>
         </div>
       ) : null}
     </section>

@@ -1,13 +1,11 @@
 import { ArrowUpRight, Globe2, Images, Lock, Sparkles } from "lucide-react";
+import { Badge, Button, EmptyState } from "./ui";
 
 export default function BoardCardGrid({ boards, activeBoardId, onSelectBoard, onToggleVisibility, pendingVisibilityBoardId }) {
   if (!boards.length) {
     return (
-      <section className="mb-7 rounded-[2rem] border border-dashed border-black/15 bg-white p-10 text-center">
-        <p className="text-lg font-black">No boards yet</p>
-        <p className="mt-2 text-sm font-semibold text-black/50">
-          Start by exploring images and Smart Saving your first idea.
-        </p>
+      <section className="mb-7">
+        <EmptyState title="No boards yet" description="Start by exploring images and Smart Saving your first idea." />
       </section>
     );
   }
@@ -19,9 +17,9 @@ export default function BoardCardGrid({ boards, activeBoardId, onSelectBoard, on
           <p className="text-xs font-black uppercase text-ember">Board studio</p>
           <h2 className="text-2xl font-black tracking-normal">Your AI-curated spaces</h2>
         </div>
-        <span className="hidden rounded-full border border-white/70 bg-white/50 px-4 py-2 text-sm font-black text-black/55 shadow-sm backdrop-blur-xl sm:inline-flex">
+        <Badge className="hidden sm:inline-flex">
           {boards.length} boards
-        </span>
+        </Badge>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -38,7 +36,7 @@ export default function BoardCardGrid({ boards, activeBoardId, onSelectBoard, on
             >
               <div className="absolute -right-10 -top-10 h-28 w-28 rounded-full bg-ember/10 blur-2xl transition group-hover:bg-ember/20" />
               <button type="button" onClick={() => onSelectBoard(board.id)} className="relative block w-full text-left">
-                <div className="grid h-44 grid-cols-2 gap-2">
+                <div className="grid h-44 grid-cols-2 gap-2 overflow-hidden rounded-[1.35rem] bg-white/45">
                   {(board.previews.length ? board.previews : ["", "", "", ""]).slice(0, 4).map((src, imageIndex) =>
                     src ? (
                       <img
@@ -46,12 +44,12 @@ export default function BoardCardGrid({ boards, activeBoardId, onSelectBoard, on
                         src={src}
                         alt=""
                         loading="lazy"
-                        className={`h-full w-full rounded-2xl object-cover shadow-sm transition duration-500 group-hover:scale-[1.03] ${
+                        className={`h-full w-full object-cover shadow-sm transition duration-500 group-hover:scale-[1.03] ${
                           imageIndex === 0 ? "row-span-2" : ""
                         }`}
                       />
                     ) : (
-                      <span key={imageIndex} className="grid h-full place-items-center rounded-2xl bg-white/55 text-black/30">
+                      <span key={imageIndex} className="grid h-full place-items-center bg-white/55 text-black/30">
                         <Images className="h-5 w-5" />
                       </span>
                     ),
@@ -69,22 +67,23 @@ export default function BoardCardGrid({ boards, activeBoardId, onSelectBoard, on
                   </span>
                 </div>
               </button>
-              <div className="relative mt-4 flex items-center justify-between text-xs font-black text-black/45">
-                <span>{board.pinCount} pins</span>
-                <span className={isPublic ? "inline-flex items-center gap-1 text-moss" : "inline-flex items-center gap-1 text-black/40"}>
+              <div className="relative mt-4 flex flex-wrap items-center justify-between gap-2 text-xs font-black text-black/45">
+                <Badge>{board.pinCount} pins</Badge>
+                <Badge tone={isPublic ? "moss" : "neutral"}>
                   <VisibilityIcon className="h-3.5 w-3.5" />
                   {isPublic ? "Public" : "Private"} · AI #{index + 1}
-                </span>
+                </Badge>
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() => onToggleVisibility?.(board)}
                 disabled={pending}
-                className="relative mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white/70 px-3 py-2.5 text-sm font-black text-black/60 shadow-sm ring-1 ring-white/70 disabled:opacity-50"
+                variant="ghost"
+                className="relative mt-3 w-full"
+                icon={VisibilityIcon}
               >
-                <VisibilityIcon className="h-4 w-4" />
                 {pending ? "Updating..." : isPublic ? "Make Private" : "Make Public"}
-              </button>
+              </Button>
             </article>
           );
         })}

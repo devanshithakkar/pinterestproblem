@@ -1,8 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, Search } from "lucide-react";
 import { api } from "../lib/api";
+import { Button, EmptyState, FieldShell, SkeletonBlock } from "./ui";
 
-const UserCard = memo(function UserCard({ profile }) {
+const UserCard = memo(function UserCard({ profile, onViewProfile }) {
   const profileUrl = `/u/${encodeURIComponent(profile.username)}`;
   return (
     <article className="glass-panel p-4 transition hover:-translate-y-1 hover:shadow-lift">
@@ -18,13 +19,15 @@ const UserCard = memo(function UserCard({ profile }) {
         </span>
       </div>
       {profile.bio ? <p className="mt-3 line-clamp-2 text-sm font-semibold leading-6 text-black/55">{profile.bio}</p> : null}
-      <a
-        href={profileUrl}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-black text-white"
+      <Button
+        type="button"
+        onClick={() => onViewProfile(profileUrl)}
+        className="mt-4 w-full"
+        variant="dark"
+        icon={ArrowUpRight}
       >
         View Profile
-        <ArrowUpRight className="h-4 w-4" />
-      </a>
+      </Button>
     </article>
   );
 });
@@ -37,6 +40,11 @@ export default function ExploreUsers() {
   const [error, setError] = useState("");
   const requestId = useRef(0);
   const normalizedQuery = useMemo(() => query.trim(), [query]);
+
+  function viewProfile(profileUrl) {
+    window.history.pushState({}, "", profileUrl);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -51,7 +59,7 @@ export default function ExploreUsers() {
     setLoading(true);
     setError("");
     api
-      .searchUsers({ query: debouncedQuery, page: 1 })
+      .searchUsers({ query: debouncedQuery, page: 1, limit: 20 })
       .then((data) => {
         if (currentRequest !== requestId.current) return;
         setUsers(data.users || []);
@@ -72,7 +80,7 @@ export default function ExploreUsers() {
           <p className="text-xs font-black uppercase text-ember">People</p>
           <h2 className="text-2xl font-black">Public PinMind profiles</h2>
         </div>
-        <label className="flex w-full items-center gap-2 rounded-2xl bg-white/70 px-4 py-3 shadow-sm ring-1 ring-white/70 sm:max-w-sm">
+        <FieldShell className="w-full sm:max-w-sm">
           <Search className="h-4 w-4 text-black/35" />
           <input
             value={query}
@@ -80,20 +88,21 @@ export default function ExploreUsers() {
             placeholder="Search username or name"
             className="w-full bg-transparent text-sm font-bold outline-none"
           />
-        </label>
+        </FieldShell>
       </div>
       {error ? <div className="mb-4 rounded-2xl bg-blush px-4 py-3 text-sm font-bold text-ember">{error}</div> : null}
-      {loading ? <div className="mb-4 glass-panel p-5 font-bold text-black/50">Searching public profiles...</div> : null}
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }, (_, index) => <SkeletonBlock key={index} className="h-44" />)}
+        </div>
+      ) : null}
       {!loading && users.length ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {users.map((profile) => <UserCard key={profile.id} profile={profile} />)}
+          {users.map((profile) => <UserCard key={profile.id} profile={profile} onViewProfile={viewProfile} />)}
         </div>
       ) : null}
       {!loading && !users.length ? (
-        <div className="rounded-[2rem] border border-dashed border-black/15 bg-white p-10 text-center">
-          <p className="text-lg font-black">No public profiles found</p>
-          <p className="mt-2 text-sm font-semibold text-black/50">Profiles appear here after users choose public visibility.</p>
-        </div>
+        <EmptyState title="No public profiles found" description="Profiles appear here after users choose public visibility." />
       ) : null}
     </section>
   );

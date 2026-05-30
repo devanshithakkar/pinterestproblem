@@ -1,5 +1,8 @@
 import { ArrowLeft, EyeOff, ExternalLink, Globe2, Loader2, Lock } from "lucide-react";
 import { useEffect, useState } from "react";
+import BoardIntelligencePanel from "../components/BoardIntelligencePanel";
+import BoardRecommendations from "../components/BoardRecommendations";
+import { Badge, EmptyState } from "../components/ui";
 import { api } from "../lib/api";
 
 export default function PublicProfilePage({ username, onBack }) {
@@ -90,10 +93,10 @@ export default function PublicProfilePage({ username, onBack }) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-3xl font-black">{profile?.displayName || profile?.username}</h1>
-                {data?.isOwner ? <span className="rounded-full bg-blush px-3 py-1 text-xs font-black text-ember">you</span> : null}
-                <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-black text-black/45">
+                {data?.isOwner ? <Badge tone="ember">you</Badge> : null}
+                <Badge>
                   {profile?.profileVisibility || "private"}
-                </span>
+                </Badge>
               </div>
               <p className="mt-1 text-sm font-bold text-black/45">@{profile?.username}</p>
               {profile?.bio ? <p className="mt-3 max-w-2xl font-semibold leading-7 text-black/60">{profile.bio}</p> : null}
@@ -107,7 +110,7 @@ export default function PublicProfilePage({ username, onBack }) {
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(profile?.interests || []).map((interest) => (
-                  <span key={interest} className="rounded-full bg-ink/5 px-3 py-1.5 text-xs font-black text-black/55">{interest}</span>
+                  <Badge key={interest}>{interest}</Badge>
                 ))}
               </div>
             </div>
@@ -115,11 +118,12 @@ export default function PublicProfilePage({ username, onBack }) {
         </section>
 
         {!boards.length ? (
-          <section className="mt-6 rounded-[2rem] border border-dashed border-black/15 bg-white p-10 text-center">
-            <Lock className="mx-auto h-8 w-8 text-black/30" />
-            <p className="mt-3 text-lg font-black">
-              {data?.isOwner ? "No boards yet" : "This user has not made any boards public yet."}
-            </p>
+          <section className="mt-6">
+            <EmptyState
+              icon={Lock}
+              title={data?.isOwner ? "No boards yet" : "This user has not made any boards public yet."}
+              description={data?.isOwner ? "Create a board or Smart Save an image to start shaping your profile." : "Public boards will appear here when this user shares them."}
+            />
           </section>
         ) : (
           <div className="mt-6 grid gap-6 lg:grid-cols-[20rem_1fr]">
@@ -150,6 +154,7 @@ export default function PublicProfilePage({ username, onBack }) {
                     <h2 className="text-2xl font-black">{activeBoard?.board?.name}</h2>
                     <p className="mt-1 text-sm font-semibold text-black/50">{activeBoard?.board?.description}</p>
                   </div>
+                  {activeBoard?.board?.id ? <div className="mb-5"><BoardIntelligencePanel boardId={activeBoard.board.id} /></div> : null}
                   <div className="columns-1 gap-4 sm:columns-2 lg:columns-3">
                     {(activeBoard?.pins || []).map((pin) => (
                       <article key={pin.id} className="mb-4 break-inside-avoid overflow-hidden rounded-[1.5rem] bg-white shadow-sm">
@@ -161,6 +166,7 @@ export default function PublicProfilePage({ username, onBack }) {
                       </article>
                     ))}
                   </div>
+                  {activeBoard?.board?.id ? <BoardRecommendations boardId={activeBoard.board.id} /> : null}
                 </>
               )}
             </section>

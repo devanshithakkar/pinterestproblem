@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import { Badge, IconButton } from "./ui";
 
 export default function PinPreviewModal({ pin, boardName, onClose }) {
   const closeButtonRef = useRef(null);
@@ -17,7 +18,7 @@ export default function PinPreviewModal({ pin, boardName, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/82 p-3 backdrop-blur-xl animate-in fade-in duration-200 sm:p-6"
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/82 p-0 backdrop-blur-xl animate-in fade-in duration-200 sm:items-center sm:p-6"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -25,7 +26,7 @@ export default function PinPreviewModal({ pin, boardName, onClose }) {
       aria-modal="true"
       aria-label={`${pin.title} preview`}
     >
-      <div className="grid max-h-[94dvh] w-full max-w-6xl overflow-hidden rounded-[1.6rem] bg-white shadow-soft sm:rounded-[2rem] lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid max-h-[100dvh] w-full max-w-6xl overflow-hidden rounded-t-[1.6rem] bg-white shadow-soft sm:max-h-[94dvh] sm:rounded-[2rem] lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-h-[50dvh] items-center justify-center bg-black">
           <img src={pin.imageUrl} alt={pin.title} className="max-h-[72dvh] w-full object-contain" />
         </div>
@@ -35,23 +36,23 @@ export default function PinPreviewModal({ pin, boardName, onClose }) {
               <p className="text-xs font-black uppercase text-ember">{boardName || "Saved pin"}</p>
               <h2 className="mt-1 text-2xl font-black">{pin.title}</h2>
             </div>
-            <button
+            <IconButton
               ref={closeButtonRef}
               type="button"
               onClick={onClose}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-black/[0.05] text-black/65 hover:bg-blush hover:text-ember"
-              aria-label="Close image preview"
+              className="shrink-0 rounded-full"
+              label="Close image preview"
             >
               <X className="h-5 w-5" />
-            </button>
+            </IconButton>
           </div>
           {pin.caption ? <p className="text-sm font-semibold leading-6 text-black/58">{pin.caption}</p> : null}
           {pin.tags?.length ? (
             <div className="mt-5 flex flex-wrap gap-2">
               {pin.tags.map((tag) => (
-                <span key={tag} className="rounded-full bg-blush px-3 py-1.5 text-xs font-black text-black/58">
+                <Badge key={tag} tone="ember">
                   {tag}
-                </span>
+                </Badge>
               ))}
             </div>
           ) : null}

@@ -1,5 +1,6 @@
 import { ArrowRightLeft, CheckCircle2, Pencil, Trash2 } from "lucide-react";
 import ConfidenceBadge from "./ConfidenceBadge";
+import { Badge, Button } from "./ui";
 
 export default function PinCard({
   pin,
@@ -8,9 +9,10 @@ export default function PinCard({
   onUpdatePin,
   onDeletePin,
   onPreviewPin,
+  readonly = false,
 }) {
   return (
-    <article className="group mb-4 break-inside-avoid overflow-hidden rounded-[1.6rem] border border-white/70 bg-white/62 shadow-sm backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift">
+    <article className="group mb-4 break-inside-avoid overflow-hidden rounded-[1.6rem] border border-white/70 bg-white/68 shadow-sm backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift">
       <button
         type="button"
         onClick={() => onPreviewPin?.(pin)}
@@ -27,10 +29,10 @@ export default function PinCard({
         <div className="absolute inset-x-3 top-3 flex justify-between gap-2 opacity-0 transition group-hover:opacity-100">
           {pin.ai?.confidence ? <ConfidenceBadge score={pin.ai.confidence} compact /> : null}
           {pin.correctedAt ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 text-xs font-black text-moss">
+            <Badge tone="moss" className="bg-white/90">
               <CheckCircle2 className="h-3.5 w-3.5" />
               learned
-            </span>
+            </Badge>
           ) : null}
         </div>
       </button>
@@ -48,39 +50,47 @@ export default function PinCard({
             ))}
           </div>
         ) : null}
-        <label className="flex items-center gap-2 rounded-2xl bg-white/70 px-3 py-2 text-sm font-bold text-black/55 shadow-sm ring-1 ring-white/70">
-          <ArrowRightLeft className="h-4 w-4 text-ember" />
-          <select
-            value={pin.boardId}
-            onChange={(event) => onMovePin(pin.id, event.target.value)}
-            className="w-full bg-transparent font-bold outline-none"
-            aria-label={`Move ${pin.title} to another board`}
-          >
-            {boards.map((board) => (
-              <option key={board.id} value={board.id}>
-                {board.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => onUpdatePin?.(pin)}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/70 px-3 py-2.5 text-sm font-black text-black/60 shadow-sm ring-1 ring-white/70"
-          >
-            <Pencil className="h-4 w-4" />
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={() => onDeletePin?.(pin)}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blush px-3 py-2.5 text-sm font-black text-ember shadow-sm"
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </button>
-        </div>
+        {!readonly ? (
+          <>
+            <label className="flex items-center gap-2 rounded-2xl bg-white/70 px-3 py-2 text-sm font-bold text-black/55 shadow-sm ring-1 ring-white/70">
+              <ArrowRightLeft className="h-4 w-4 text-ember" />
+              <select
+                value={pin.boardId}
+                onChange={(event) => onMovePin?.(pin.id, event.target.value)}
+                className="w-full bg-transparent font-bold outline-none"
+                aria-label={`Move ${pin.title} to another board`}
+              >
+                {boards.map((board) => (
+                  <option key={board.id} value={board.id}>
+                    {board.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                onClick={() => onUpdatePin?.(pin)}
+                variant="ghost"
+                icon={Pencil}
+              >
+                Edit
+              </Button>
+              <Button
+                type="button"
+                onClick={() => onDeletePin?.(pin)}
+                variant="soft"
+                icon={Trash2}
+              >
+                Delete
+              </Button>
+            </div>
+          </>
+        ) : pin.board?.name ? (
+          <p className="rounded-2xl bg-white/70 px-3 py-2 text-xs font-black text-black/45 shadow-sm ring-1 ring-white/70">
+            Board: {pin.board.name}
+          </p>
+        ) : null}
       </div>
     </article>
   );

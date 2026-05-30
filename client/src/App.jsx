@@ -17,7 +17,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [authError, setAuthError] = useState("");
-  const publicProfileMatch = window.location.pathname.match(/^\/u\/([^/]+)\/?$/);
+  const [locationPath, setLocationPath] = useState(window.location.pathname);
+  const publicProfileMatch = locationPath.match(/^\/u\/([^/]+)\/?$/);
   const publicProfileUsername = publicProfileMatch?.[1] ? decodeURIComponent(publicProfileMatch[1]) : null;
 
   async function loadBoards(preferredId) {
@@ -82,6 +83,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    function syncLocation() {
+      setLocationPath(window.location.pathname);
+    }
+    window.addEventListener("popstate", syncLocation);
+    return () => window.removeEventListener("popstate", syncLocation);
+  }, []);
+
+  useEffect(() => {
     async function refreshOnFocus() {
       if (document.visibilityState !== "visible") return;
       const { data } = await supabase.auth.getSession();
@@ -140,6 +149,7 @@ export default function App() {
             username={publicProfileUsername}
             onBack={() => {
               window.history.pushState({}, "", "/");
+              setLocationPath("/");
               setShowApp(true);
             }}
           />

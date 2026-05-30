@@ -194,9 +194,22 @@ Autonomous Smart Save is the default upload flow:
 6. Otherwise PinMind creates an AI-named board and saves the pin there.
 7. The UI shows Undo, Move, and Rename Board controls after the save instead of asking the user before saving.
 
+Phase 1 Smart Save reliability hardens this into one shared backend pipeline:
+
+- `imageInputService` normalizes upload, pasted URL, and library image inputs.
+- `visionService` runs Gemini structured vision analysis, with mock fallback.
+- `boardProfileService` loads the signed-in user's boards, pins, and past AI signals.
+- `boardMatcherService` scores board compatibility with category gates and mismatch penalties.
+- `boardNameService` maps analysis into safe category board names and rejects garbage names.
+- `smartSaveService` orchestrates analysis, board reuse/creation, pin creation, and debug output.
+
+All Smart Save routes now use the same orchestration path, so uploads, pasted URLs, and Explore library images do not drift into different matching behavior.
+
 Explore Smart Save also uses provider metadata from Pexels/Unsplash, including title, description, and tags. Before creating a board, the backend maps the image into a controlled category board:
 
 - Animals
+- Concerts / Music Events
+- Campus Life / Friends
 - Nature
 - Anime / Digital Art
 - Movies / Cinema
@@ -207,6 +220,7 @@ Explore Smart Save also uses provider metadata from Pexels/Unsplash, including t
 - Vehicles
 - Fitness / Sports
 - Architecture / Travel
+- Visual Inspiration
 
 Generic suggestions such as `Image Idea`, `Image Ideas`, `Untitled Board`, `New Board`, `Smart Save`, and `Misc` are rejected. PinMind first searches the user's existing boards by normalized name and keyword overlap; if a similar board exists, it reuses it. If no category is clear, it uses `Visual Inspiration` once and reuses that board later.
 
@@ -226,6 +240,64 @@ npm run test:matching
 ```
 
 This covers the main black-hole cases: a Nature board with several pins must not capture dress, concert, campus friends, or coding images, while flower/forest images should still match Nature.
+
+## Level 3: Personal AI Visual Memory
+
+Level 3 adds the first version of PinMind as a personal visual memory engine. It is still keyword/hybrid logic rather than vector embeddings, but it gives the product a stronger foundation.
+
+AI Visual Search:
+
+- Route: `GET /api/search/pins?q=&page=&limit=`
+- Searches only the signed-in user's saved pins.
+- Matches pin title, caption, tags, AI prediction signals, board name, and board description.
+- Frontend: Visual Search view in the sidebar and mobile nav.
+
+Board Intelligence Profiles:
+
+- Route: `GET /api/boards/:id/profile`
+- Builds a live board identity from board fields, saved pins, tags, and AI prediction signals.
+- Returns summary, top tags, dominant categories, subjects, moods, styles, colors, recommendation queries, and confidence.
+- Frontend: Board Intelligence panel in the AI view and on visible public board pages.
+- Privacy: owners can view profiles for all of their boards; other signed-in users can view a board intelligence profile only when the owner profile is public and the board is public.
+- Low-data boards return a low-confidence, helpful profile instead of calling Gemini on every request.
+- Owner board profiles use a short-lived computed cache; public reads still re-check visibility before returning anything.
+
+Smart Cleanup:
+
+- Route: `GET /api/boards/cleanup-suggestions`
+- Route: `POST /api/boards/merge`
+- Suggests likely duplicate/similar boards using normalized names, aliases, tags, descriptions, board intelligence profiles, and saved-pin signals.
+- Merge requires user confirmation and moves pins from source board to target board before deleting the source board.
+- The source board is deleted only after the backend confirms it is empty.
+- Cleanup runs only against the signed-in user's boards.
+- Frontend: Smart Cleanup panel in the AI view.
+
+Feedback Learning:
+
+- Table: `ai_feedback`
+- When a user moves a pin to another board, PinMind records the original board, corrected board, and image signals.
+- Smart Save matching uses this feedback as a small user-specific scoring adjustment.
+- Feedback is a nudge, not an override, so it cannot overpower primary visual category gates.
+- The UI shows “Learning from your correction.” after a pin move.
+- Feedback rows are protected by RLS so users can read/insert only their own corrections.
+
+Board-based Recommendations:
+
+- Route: `GET /api/boards/:id/recommendations?page=&provider=`
+- Builds 1-3 recommendation queries from the board intelligence profile.
+- Calls Pexels/Unsplash through the backend and returns up to 20 de-duplicated normalized images per page.
+- API keys stay backend-only, with mock fallback if providers are unavailable.
+- Public/private rules match board intelligence: owners can load their own board recommendations, and other signed-in users can load them only for public boards on public profiles.
+- Frontend: More Like This Board section in the AI view with Smart Save buttons.
+- Smart Save from recommendations passes the source board as a small context nudge, but Gemini analysis and category gates still decide the final board.
+
+Future memory roadmap:
+
+- Persist full image analysis JSON per pin.
+- Add `pgvector`/embedding columns for pins and board profiles.
+- Replace lexical search with hybrid keyword + vector similarity.
+- Learn stronger preferences from move, delete, rename, and merge actions.
+- Add a browser extension that sends image/page metadata into the same Smart Save pipeline.
 
 Undo behavior:
 
@@ -270,8 +342,13 @@ All endpoints below except `/api/health` require `Authorization: Bearer <Supabas
 | GET | `/api/boards` | Load Supabase boards |
 | POST | `/api/boards` | Create a Supabase board |
 | GET | `/api/boards/:id` | Load board details, pins, and recommendations |
+| GET | `/api/boards/:id/profile` | Load board intelligence profile |
+| GET | `/api/boards/:id/recommendations` | Load provider images based on board profile |
+| GET | `/api/boards/cleanup-suggestions` | Suggest duplicate/similar boards to merge |
+| POST | `/api/boards/merge` | Merge one owned board into another |
 | PATCH | `/api/boards/:id` | Edit a board owned by the signed-in user |
 | DELETE | `/api/boards/:id` | Delete a board and its pins |
+| GET | `/api/search/pins` | Search saved pins with natural language keywords |
 | GET | `/api/pins` | Load Supabase pins |
 | POST | `/api/pins` | Create a Supabase pin |
 | PATCH | `/api/pins/:id` | Edit a pin title, description, or tags |

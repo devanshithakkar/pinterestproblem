@@ -28,6 +28,11 @@ function isValidHttpImageUrl(value = "") {
   }
 }
 
+function looksLikeUrlInProgress(value = "") {
+  const trimmed = value.trim();
+  return trimmed === "http://" || trimmed === "https://" || /^https?:\/\/[^/]*$/i.test(trimmed);
+}
+
 function loadImagePreview(src) {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -230,7 +235,12 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
     try {
       setForm((current) => ({ ...current, imageUrl, source: "Image URL", fileName: imageUrl.split("/").pop() || "remote-image" }));
       setBusyLabel("Loading preview");
-      await loadImagePreview(imageUrl);
+      setStepIndex(1);
+      try {
+        await loadImagePreview(imageUrl);
+      } catch {
+        throw new Error("This image URL cannot be previewed. Try a direct image link.");
+      }
       if (requestId !== requestRef.current) return;
       setBusyLabel("Analyzing image");
       setStepIndex(2);
@@ -241,7 +251,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
       setStepIndex(4);
       await finishSmartSave(result);
     } catch (err) {
-      setError(err.message || "This image URL cannot be previewed. Try a direct image link.");
+      setError(err.message || "AI analysis failed. Try another direct image URL.");
     } finally {
       setBusy(false);
       setBusyLabel("");
@@ -407,7 +417,7 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
       const { pin } = await api.movePin(lastSave.pin.id, quickMoveBoardId);
       await onSaved(quickMoveBoardId, pin);
       setLastSave((current) => ({ ...current, pin, board: boards.find((board) => board.id === quickMoveBoardId) || current.board }));
-      setSuccess(`Moved to ${boards.find((board) => board.id === quickMoveBoardId)?.name || "selected board"}.`);
+      setSuccess(`Moved to ${boards.find((board) => board.id === quickMoveBoardId)?.name || "selected board"}. Learning from your correction.`);
     } catch (err) {
       setError(err.message || "Unable to move this pin.");
     } finally {
@@ -489,12 +499,20 @@ export default function UploadModal({ boards, onClose, onSaved, onBoardCreated }
                   }
                 }}
                 onBlur={() => {
-                  if (urlInput && !busy && !aiResult) smartSaveImageUrl();
+                  if (urlInput && !busy && !aiResult && !looksLikeUrlInProgress(urlInput)) smartSaveImageUrl();
                 }}
                 disabled={busy}
                 className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 outline-none focus:border-ember"
                 placeholder="https://..."
               />
+              <button
+                type="button"
+                onClick={() => smartSaveImageUrl()}
+                disabled={busy || !urlInput.trim()}
+                className="mt-2 w-full rounded-2xl bg-ink px-4 py-3 text-sm font-black text-white shadow-sm disabled:opacity-50"
+              >
+                {busy && form.source === "Image URL" ? `${busyLabel}...` : "Smart Save URL"}
+              </button>
             </label>
 
             <div>
