@@ -155,6 +155,14 @@ Explore Smart Save also uses provider metadata from Pexels/Unsplash, including t
 
 Generic suggestions such as `Image Idea`, `Image Ideas`, `Untitled Board`, `New Board`, `Smart Save`, and `Misc` are rejected. PinMind first searches the user's existing boards by normalized name and keyword overlap; if a similar board exists, it reuses it. If no category is clear, it uses `Visual Inspiration` once and reuses that board later.
 
+Board-name safety:
+
+- Board names are never generated from Supabase project refs, storage hostnames, UUIDs, provider ids, file paths, or raw URL segments.
+- Random-looking strings such as `Fhrhaulsuxbcxzcrviqq Ideas`, long alphanumeric hashes, UUID-like values, and generic names are rejected by `sanitizeBoardName`.
+- Gemini's primary subject/category and boolean flags are prioritized over provider metadata.
+- Vehicles is strict: PinMind only chooses `Vehicles` when Gemini marks `isVehicle`, the primary category is vehicle/transportation, or the primary detected object is clearly a car, bike, motorcycle, truck, or bus. Concert and fashion images cannot become Vehicles because of weak metadata.
+- Existing boards are reused by exact name, singular/plural normalization, alias groups, and category keyword overlap.
+
 Undo behavior:
 
 - If the image was saved to an existing board, undo deletes the created pin.
@@ -625,11 +633,16 @@ curl -sS -X POST "$API_URL/api/pinterest/publish/REPLACE_WITH_PIN_UUID" \
 14. Smart Save another animal image and confirm the same Animals board is reused.
 15. Smart Save a room decor image and confirm Room Decor is used or created.
 16. Smart Save a coding image and confirm Coding / Tech is used or created.
-17. Click a saved pin image and confirm the fullscreen preview opens.
-18. Close the preview with Escape and by clicking the backdrop.
-19. Switch to another browser tab, come back, and confirm boards remain visible.
-20. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
-21. Add a Pinterest Board ID to a board and publish one saved pin.
+17. Smart Save a concert image and confirm Concerts / Music Events is used or created, not Vehicles.
+18. Smart Save a dress/fashion image and confirm Fashion is used or created, not Vehicles.
+19. Smart Save a campus/friends image and confirm Campus Life / Friends is used or created.
+20. Smart Save an unknown image twice and confirm Visual Inspiration is reused.
+21. Confirm no new board is created with a random name like `Fhrhaulsuxbcxzcrviqq Ideas`.
+22. Click a saved pin image and confirm the fullscreen preview opens.
+23. Close the preview with Escape and by clicking the backdrop.
+24. Switch to another browser tab, come back, and confirm boards remain visible.
+25. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
+26. Add a Pinterest Board ID to a board and publish one saved pin.
 
 Mobile checks:
 

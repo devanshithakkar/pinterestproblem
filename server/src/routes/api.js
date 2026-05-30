@@ -119,6 +119,11 @@ function visionPayloadForBoardMatching(visionAnalysis, body = {}) {
     isFashion: visionAnalysis.isFashion,
     isTech: visionAnalysis.isTech,
     isAnimeOrIllustration: visionAnalysis.isAnimeOrIllustration,
+    isMusicOrConcert: visionAnalysis.isMusicOrConcert,
+    isVehicle: visionAnalysis.isVehicle,
+    isCampusOrFriends: visionAnalysis.isCampusOrFriends,
+    eventType: visionAnalysis.eventType,
+    peopleCount: visionAnalysis.peopleCount,
     category: visionAnalysis.category,
     suggestedBoardName: visionAnalysis.suggestedBoardName,
     source: body.source,
@@ -252,6 +257,18 @@ const categoryBoardMap = [
     keywords: ["nature", "flower", "flowers", "forest", "mountain", "beach", "landscape", "outdoors", "garden", "plant", "plants"],
   },
   {
+    name: "Concerts / Music Events",
+    description: "Concerts, live music, festivals, stages, performers, and music event memories.",
+    keywords: ["concert", "concerts", "music", "stage", "singer", "band", "festival", "performance", "crowd", "event"],
+    flags: ["isMusicOrConcert"],
+  },
+  {
+    name: "Campus Life / Friends",
+    description: "Campus memories, friends, college life, group photos, and student moments.",
+    keywords: ["campus", "college", "student", "students", "friends", "friend", "group", "university", "classmate", "memories"],
+    flags: ["isCampusOrFriends"],
+  },
+  {
     name: "Anime / Digital Art",
     description: "Anime, manga, illustration, character art, and digital art inspiration.",
     keywords: ["anime", "manga", "illustration", "illustrated", "digital", "art", "character", "cartoon", "fanart", "wallpaper"],
@@ -284,7 +301,8 @@ const categoryBoardMap = [
   {
     name: "Vehicles",
     description: "Cars, bikes, motorcycles, and vehicle design inspiration.",
-    keywords: ["vehicle", "vehicles", "car", "cars", "bike", "bicycle", "motorcycle", "auto", "automotive"],
+    keywords: ["vehicle", "vehicles", "car", "cars", "bike", "bicycle", "motorcycle", "truck", "bus", "automotive"],
+    flags: ["isVehicle"],
   },
   {
     name: "Fitness / Sports",
@@ -309,6 +327,17 @@ function normalizeName(value = "") {
     .trim();
 }
 
+function looksRandomToken(value = "") {
+  const compact = String(value).replace(/\s+ideas?$/i, "").replace(/[^a-z0-9]/gi, "");
+  if (compact.length >= 16 && /^[a-z0-9]+$/i.test(compact)) {
+    const vowelRatio = (compact.match(/[aeiou]/gi) || []).length / compact.length;
+    if (vowelRatio < 0.32 || /\d/.test(compact)) return true;
+  }
+  if (/^[0-9a-f]{8,}$/i.test(compact)) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(String(value))) return true;
+  return false;
+}
+
 function metadataWords(analysis = {}, imageMetadata = {}) {
   return [
     analysis.title,
@@ -317,6 +346,8 @@ function metadataWords(analysis = {}, imageMetadata = {}) {
     analysis.primaryCategory,
     analysis.category,
     analysis.environment,
+    analysis.eventType,
+    analysis.peopleCount,
     ...(analysis.secondaryCategories || []),
     ...(analysis.detectedTags || []),
     ...(analysis.detectedObjects || analysis.objects || []),
@@ -340,14 +371,25 @@ function metadataWords(analysis = {}, imageMetadata = {}) {
 function getSuggestedBoardFromAnalysis(analysis = {}, imageMetadata = {}) {
   const words = metadataWords(analysis, imageMetadata);
   const wordSet = new Set(words);
+  const flagMatch = categoryBoardMap.find((category) => (category.flags || []).some((flag) => analysis[flag]));
+  const primary = String(analysis.primaryCategory || analysis.category || "").toLowerCase();
+  const subject = String(analysis.primarySubject || "").toLowerCase();
+  const strictVehicle =
+    analysis.isVehicle ||
+    /^(vehicle|transportation|car|motorcycle|bike|bicycle|truck|bus)$/i.test(primary) ||
+    ["car", "vehicle", "motorcycle", "bicycle", "truck", "bus"].some((term) => subject.includes(term)) ||
+    (analysis.detectedObjects || analysis.objects || []).some((item) => /^(car|vehicle|motorcycle|bicycle|truck|bus)$/i.test(String(item)));
   const scored = categoryBoardMap
     .map((category) => ({
       ...category,
-      score: category.keywords.reduce((sum, keyword) => sum + (wordSet.has(keyword) ? 1 : 0), 0),
+      score:
+        (flagMatch?.name === category.name ? 20 : 0) +
+        category.keywords.reduce((sum, keyword) => sum + (wordSet.has(keyword) ? 1 : 0), 0),
     }))
+    .filter((category) => category.name !== "Vehicles" || strictVehicle)
     .sort((a, b) => b.score - a.score);
   const requested = normalizeName(analysis.suggestedBoardName || imageMetadata.suggestedBoardName || "");
-  const isGeneric = !requested || genericBoardNames.has(requested);
+  const isGeneric = !requested || genericBoardNames.has(requested) || looksRandomToken(requested);
   const category = scored[0]?.score > 0 ? scored[0] : null;
 
   if (category && (isGeneric || scored[0].score >= 1)) {
@@ -378,6 +420,14 @@ function getSuggestedBoardFromAnalysis(analysis = {}, imageMetadata = {}) {
   };
 }
 
+function sanitizeBoardName(candidateName, analysis = {}, metadata = {}) {
+  const normalized = normalizeName(candidateName);
+  if (!normalized || genericBoardNames.has(normalized) || looksRandomToken(candidateName)) {
+    return getSuggestedBoardFromAnalysis(analysis, { ...metadata, suggestedBoardName: candidateName }).name;
+  }
+  return String(candidateName).trim();
+}
+
 function findReusableBoard(boards = [], suggestion) {
   const suggestedName = normalizeName(suggestion.name);
   const suggestedTokens = new Set(metadataWords({}, { tags: [suggestion.name, ...(suggestion.keywords || [])] }));
@@ -388,6 +438,15 @@ function findReusableBoard(boards = [], suggestion) {
     if (boardName === suggestedName || boardName.replace(/s$/, "") === suggestedName.replace(/s$/, "")) return true;
     const boardTokens = new Set(metadataWords({}, { tags: [board.name, board.description, ...(board.tags || [])] }));
     const overlap = [...suggestedTokens].filter((token) => boardTokens.has(token));
+    const aliasGroups = [
+      ["animals", "animal photography", "pets wildlife", "pets and wildlife"],
+      ["concerts music events", "music", "concerts", "music events"],
+      ["fashion", "outfits", "style"],
+      ["campus life friends", "friends", "college memories", "campus life"],
+      ["anime digital art", "anime", "digital art"],
+      ["coding tech", "coding", "tech", "ui design"],
+    ];
+    if (aliasGroups.some((group) => group.includes(boardName) && group.includes(suggestedName))) return true;
     return overlap.length >= 2 || (overlap.length >= 1 && (boardName.includes(suggestedName) || suggestedName.includes(boardName)));
   });
 }
@@ -423,6 +482,7 @@ async function createAutonomousSave({ userId, body, analysis, decision, uploadRe
     ...body,
     suggestedBoardName: decision.suggestedBoardName,
   });
+  suggestion.name = sanitizeBoardName(suggestion.name, analysis, body);
   const reusableBoard = findReusableBoard(boards, suggestion);
 
   if (reusableBoard) {
@@ -444,6 +504,19 @@ async function createAutonomousSave({ userId, body, analysis, decision, uploadRe
         }`,
         rejectedBoards: decision.scores || [],
         undoTokenOrIds: { pinId: createdPin.id, boardId: createdPin.boardId, createdNewBoard: false },
+        debug:
+          process.env.NODE_ENV === "production"
+            ? undefined
+            : {
+                analysisSummary: `${analysis.primarySubject || ""} / ${analysis.primaryCategory || ""}`.trim(),
+                chosenBoardName: reusableBoard.name,
+                reusedExistingBoard: true,
+                createdNewBoard: false,
+                rejectedBoardNames: (decision.scores || []).map((score) => score.boardName),
+                rejectedReasons: (decision.scores || []).map((score) => score.rejectedReason).filter(Boolean),
+                categoryDecision: suggestion.name,
+                sanitizedBoardName: suggestion.name,
+              },
       },
     };
   }
@@ -474,6 +547,19 @@ async function createAutonomousSave({ userId, body, analysis, decision, uploadRe
       } ${decision.reasoning || ""}`.trim(),
       rejectedBoards: decision.scores || [],
       undoTokenOrIds: { pinId: createdPin.id, boardId: board.id, createdNewBoard: true },
+      debug:
+        process.env.NODE_ENV === "production"
+          ? undefined
+          : {
+              analysisSummary: `${analysis.primarySubject || ""} / ${analysis.primaryCategory || ""}`.trim(),
+              chosenBoardName: board.name,
+              reusedExistingBoard: false,
+              createdNewBoard: true,
+              rejectedBoardNames: (decision.scores || []).map((score) => score.boardName),
+              rejectedReasons: (decision.scores || []).map((score) => score.rejectedReason).filter(Boolean),
+              categoryDecision: suggestion.name,
+              sanitizedBoardName: board.name,
+            },
     },
   };
 }

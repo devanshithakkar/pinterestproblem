@@ -20,9 +20,15 @@ const DEFAULT_ANALYSIS = {
   isFashion: false,
   isTech: false,
   isAnimeOrIllustration: false,
+  isMusicOrConcert: false,
+  isVehicle: false,
+  isCampusOrFriends: false,
+  eventType: null,
+  peopleCount: null,
   confidenceNotes: "Vision analysis is unavailable.",
   category: "inspiration",
   suggestedBoardName: null,
+  suggestedBoardDescription: null,
   reasoning: "Vision analysis is unavailable, so PinMind used fallback image metadata.",
 };
 
@@ -75,9 +81,15 @@ function normalizeVisionAnalysis(value = {}) {
     isFashion: Boolean(value.isFashion),
     isTech: Boolean(value.isTech),
     isAnimeOrIllustration: Boolean(value.isAnimeOrIllustration),
+    isMusicOrConcert: Boolean(value.isMusicOrConcert),
+    isVehicle: Boolean(value.isVehicle),
+    isCampusOrFriends: Boolean(value.isCampusOrFriends),
+    eventType: value.eventType ? String(value.eventType).trim().toLowerCase() : null,
+    peopleCount: value.peopleCount ? String(value.peopleCount).trim().toLowerCase() : null,
     confidenceNotes: String(value.confidenceNotes || DEFAULT_ANALYSIS.confidenceNotes).trim(),
     category: primaryCategory,
     suggestedBoardName: value.suggestedBoardName ? String(value.suggestedBoardName).trim() : null,
+    suggestedBoardDescription: value.suggestedBoardDescription ? String(value.suggestedBoardDescription).trim() : null,
     reasoning: String(value.reasoning || DEFAULT_ANALYSIS.reasoning).trim(),
   };
 }
@@ -91,13 +103,15 @@ function dataUrlFromBase64(imageBase64, mimeType = "image/jpeg") {
 function prompt() {
   return `Analyze this image for a Pinterest-style smart board organizer.
 Return only valid JSON. Do not include markdown. Identify the main subject first and do not over-focus on the background.
-If the image is an animal, pet, person, food, fashion item, tech/UI screenshot, anime character, or illustration, make that the primary category even when the background contains room decor.
+If the image is an animal, pet, person, food, fashion item, concert, music event, campus/friends photo, tech/UI screenshot, anime character, vehicle, or illustration, make that the primary category even when the background contains unrelated objects.
+Do not infer a vehicle from metadata or background unless a car, motorcycle, bicycle, truck, bus, or vehicle is the primary subject.
+Concert images should be music/concert/event. Dress/outfit images should be fashion/outfit/style. Campus group photos should be campus life/friends/college memories.
 Use the exact JSON shape below:
 {
   "title": "short useful pin title",
   "description": "one sentence visual description",
   "primarySubject": "the main subject, not the background",
-  "primaryCategory": "animal|pet|wildlife|interior|room decor|food|fashion|tech|coding|ui design|anime|illustration|art|travel|fitness|nature|other",
+  "primaryCategory": "animal|pet|wildlife|nature|concert|music event|campus life|friends|interior|room decor|food|fashion|tech|coding|ui design|anime|illustration|art|travel|fitness|vehicle|other",
   "secondaryCategories": ["other relevant categories"],
   "detectedObjects": ["main objects or subjects"],
   "detectedTags": ["visual", "tags"],
@@ -105,6 +119,8 @@ Use the exact JSON shape below:
   "colors": ["dominant colors"],
   "mood": ["mood words"],
   "environment": "where the subject appears, such as studio, home, outdoors, screen, unknown",
+  "eventType": "concert|festival|campus|wedding|sports|null",
+  "peopleCount": "none|one|small group|crowd|null",
   "isPerson": false,
   "isAnimal": false,
   "isInterior": false,
@@ -112,15 +128,19 @@ Use the exact JSON shape below:
   "isFashion": false,
   "isTech": false,
   "isAnimeOrIllustration": false,
+  "isMusicOrConcert": false,
+  "isVehicle": false,
+  "isCampusOrFriends": false,
   "confidenceNotes": "short note about uncertainty or strong visual evidence",
   "suggestedBoardName": "short board name or null",
+  "suggestedBoardDescription": "short board description or null",
   "reasoning": "why these labels fit"
 }
 Do not ask the user for manual tags or descriptions.`;
 }
 
-function imageWords({ imageUrl = "", fileName = "" }) {
-  return `${imageUrl} ${fileName}`
+function imageWords({ fileName = "" }) {
+  return `${fileName}`
     .split(/[/?#&=._-]/)
     .join(" ")
     .toLowerCase();
@@ -131,7 +151,13 @@ function metadataTags(input = {}) {
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .map((word) => word.trim())
-    .filter((word) => word.length > 2 && !["https", "http", "www", "com", "jpg", "jpeg", "png", "webp", "unknown", "example"].includes(word)))]
+        .filter(
+          (word) =>
+            word.length > 2 &&
+            word.length < 18 &&
+            !/^[a-f0-9-]{12,}$/i.test(word) &&
+            !["https", "http", "www", "com", "jpg", "jpeg", "png", "webp", "unknown", "example", "supabase", "storage"].includes(word),
+        ))]
     .slice(0, 8);
 }
 
@@ -216,6 +242,45 @@ function mockVisionAnalyzer(input = {}) {
       board: "Anime Aesthetic",
       flags: { isAnimeOrIllustration: true },
     },
+    {
+      primaryCategory: "concert",
+      test: /concert|music|stage|singer|band|festival|crowd|performance/,
+      title: "Concert moment",
+      subject: "live music performance",
+      tags: ["concert", "music", "stage", "performance", "event"],
+      objects: ["stage", "performer", "crowd"],
+      style: ["cinematic", "live"],
+      colors: ["dark", "vibrant"],
+      mood: ["energetic"],
+      board: "Concerts / Music Events",
+      flags: { isMusicOrConcert: true, eventType: "concert", peopleCount: "crowd" },
+    },
+    {
+      primaryCategory: "campus life",
+      test: /campus|college|student|friends|group|university|classmate/,
+      title: "Campus friends",
+      subject: "group of friends",
+      tags: ["campus", "friends", "college", "student life"],
+      objects: ["people", "friends"],
+      style: ["candid", "social"],
+      colors: ["mixed"],
+      mood: ["friendly", "nostalgic"],
+      board: "Campus Life / Friends",
+      flags: { isCampusOrFriends: true, isPerson: true, peopleCount: "small group" },
+    },
+    {
+      primaryCategory: "vehicle",
+      test: /vehicle|car|motorcycle|bicycle|truck|bus|automotive/,
+      title: "Vehicle inspiration",
+      subject: "vehicle",
+      tags: ["vehicle", "car", "automotive"],
+      objects: ["vehicle"],
+      style: ["mechanical"],
+      colors: ["mixed"],
+      mood: ["dynamic"],
+      board: "Vehicles",
+      flags: { isVehicle: true },
+    },
   ];
 
   const match = groups.find((group) => group.test.test(words));
@@ -255,6 +320,7 @@ function mockVisionAnalyzer(input = {}) {
     mood: ["open-ended"],
     environment: "unknown",
     suggestedBoardName: tags[0] ? `${tags[0][0].toUpperCase()}${tags[0].slice(1)} Ideas` : "Fresh Ideas",
+    suggestedBoardDescription: "General visual inspiration that needs a safe fallback board.",
     confidenceNotes: "Mock vision found only weak metadata clues.",
     reasoning: "Mock vision could not identify a strong existing category from metadata.",
   });
