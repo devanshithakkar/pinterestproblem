@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api } from "../lib/api";
 
 export default function CreateBoardModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ name: "", description: "", tags: "" });
+  const [form, setForm] = useState({ name: "", description: "", tags: "", visibility: "private" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -24,6 +24,7 @@ export default function CreateBoardModal({ onClose, onCreated }) {
           .split(",")
           .map((tag) => tag.trim().toLowerCase())
           .filter(Boolean),
+        visibility: form.visibility,
       });
       await onCreated(board);
       onClose();
@@ -75,6 +76,23 @@ export default function CreateBoardModal({ onClose, onCreated }) {
               placeholder="minimal, travel, beach, map"
             />
           </label>
+          <div className="rounded-2xl border border-black/10 bg-black/[0.025] p-3">
+            <p className="mb-2 text-sm font-black">Visibility</p>
+            <div className="grid grid-cols-2 gap-2">
+              {["private", "public"].map((visibility) => (
+                <button
+                  key={visibility}
+                  type="button"
+                  onClick={() => setForm({ ...form, visibility })}
+                  className={`rounded-2xl px-4 py-3 text-sm font-black ${
+                    form.visibility === visibility ? "bg-ink text-white" : "bg-white text-black/55"
+                  }`}
+                >
+                  {visibility}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         {error ? <div className="mt-4 rounded-2xl bg-blush px-4 py-3 text-sm font-bold text-ember">{error}</div> : null}
         <button disabled={saving} className="mt-6 w-full rounded-2xl bg-ember px-5 py-3 font-black text-white shadow-lift disabled:opacity-60">

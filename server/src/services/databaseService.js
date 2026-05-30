@@ -34,11 +34,31 @@ function mapBoard(row, pins = [], previewPins = pins) {
     aesthetic: row.aesthetic,
     coverImageUrl: row.cover_image_url,
     pinterestBoardId: row.pinterest_board_id,
+    visibility: row.visibility || "private",
     pinCount: pins.length,
     previews: previewPins.slice(0, 4).map((pin) => pin.image_url),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mapProfile(row, { includePrivate = false } = {}) {
+  if (!row) return null;
+  const profile = {
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    bio: row.bio,
+    websiteUrl: row.website_url,
+    location: row.location,
+    interests: row.interests || [],
+    profileVisibility: row.profile_visibility || "private",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+  if (includePrivate) profile.email = row.email;
+  return profile;
 }
 
 function mapPin(row) {
@@ -151,6 +171,11 @@ export async function upsertProfile(user) {
   const metadata = user.user_metadata || {};
   const displayName = metadata.full_name || metadata.name || user.email?.split("@")[0] || "PinMind user";
   const avatarUrl = metadata.avatar_url || metadata.picture || null;
+  const existing = assertSupabaseResult(
+    await supabaseAdmin.from("profiles").select("*").eq("id", user.id).maybeSingle(),
+    "get existing profile",
+  );
+  if (existing) return existing;
 
   return assertSupabaseResult(
     await supabaseAdmin
@@ -164,6 +189,176 @@ export async function upsertProfile(user) {
       .single(),
     "upsert profile",
   );
+}
+
+function normalizeUsername(username) {
+  const normalized = String(username || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.]/g, "");
+  if (!normalized) return null;
+  if (normalized.length < 3 || normalized.length > 30) {
+    throw new Error("Username must be 3 to 30 characters.");
+  }
+  return normalized;
+}
+
+function normalizeVisibility(value, fallback = "private") {
+  const visibility = String(value || fallback).toLowerCase();
+  if (!["public", "private"].includes(visibility)) {
+    throw new Error("Visibility must be public or private.");
+  }
+  return visibility;
+}
+
+export async function getProfile(userId) {
+  requireValue(userId, "userId");
+  const profile = assertSupabaseResult(
+    await supabaseAdmin.from("profiles").select("*").eq("id", userId).maybeSingle(),
+    "get profile",
+  );
+  if (!profile) throw new Error("Profile not found");
+  return mapProfile(profile, { includePrivate: true });
+}
+
+export async function updateProfile(userId, profileData = {}) {
+  requireValue(userId, "userId");
+  const updates = {};
+  if (profileData.username !== undefined) updates.username = normalizeUsername(profileData.username);
+  if (profileData.displayName !== undefined || profileData.display_name !== undefined) {
+    updates.display_name = (profileData.displayName ?? profileData.display_name ?? "").trim() || "PinMind user";
+  }
+  if (profileData.avatarUrl !== undefined || profileData.avatar_url !== undefined) {
+    updates.avatar_url = (profileData.avatarUrl ?? profileData.avatar_url ?? "").trim() || null;
+  }
+  if (profileData.bio !== undefined) updates.bio = String(profileData.bio || "").trim();
+  if (profileData.websiteUrl !== undefined || profileData.website_url !== undefined) {
+    updates.website_url = (profileData.websiteUrl ?? profileData.website_url ?? "").trim() || null;
+  }
+  if (profileData.location !== undefined) updates.location = String(profileData.location || "").trim() || null;
+  if (profileData.interests !== undefined) updates.interests = normalizeTags(profileData.interests);
+  if (profileData.profileVisibility !== undefined || profileData.profile_visibility !== undefined) {
+    updates.profile_visibility = normalizeVisibility(profileData.profileVisibility ?? profileData.profile_visibility);
+  }
+
+  const profile = assertSupabaseResult(
+    await supabaseAdmin.from("profiles").update(updates).eq("id", userId).select("*").maybeSingle(),
+    "update profile",
+  );
+  if (!profile) throw new Error("Profile not found");
+  return mapProfile(profile, { includePrivate: true });
+}
+
+export async function searchPublicUsers({ query = "", page = 1, limit = 20 } = {}) {
+  const safeLimit = Math.min(20, Math.max(1, Number(limit) || 20));
+  const offset = (Math.max(1, Number(page) || 1) - 1) * safeLimit;
+  let request = supabaseAdmin
+    .from("profiles")
+    .select("*", { count: "exact" })
+    .eq("profile_visibility", "public")
+    .not("username", "is", null)
+    .order("updated_at", { ascending: false })
+    .range(offset, offset + safeLimit - 1);
+
+  const search = String(query || "").trim();
+  if (search) {
+    const escaped = search.replace(/[%_]/g, "\\$&");
+    request = request.or(`username.ilike.%${escaped}%,display_name.ilike.%${escaped}%`);
+  }
+
+  const { data, error, count } = await request;
+  if (error) throw new Error(`Supabase search users failed: ${error.message}`);
+  return {
+    users: (data || []).map((row) => mapProfile(row)),
+    pagination: { page: Math.max(1, Number(page) || 1), limit: safeLimit, total: count || 0 },
+  };
+}
+
+export async function getProfileByUsername(username) {
+  const normalized = normalizeUsername(username);
+  requireValue(normalized, "username");
+  const profile = assertSupabaseResult(
+    await supabaseAdmin.from("profiles").select("*").eq("username", normalized).maybeSingle(),
+    "get public profile",
+  );
+  if (!profile) throw new Error("Profile not found");
+  return mapProfile(profile);
+}
+
+export async function getVisibleBoardsForProfile(viewerId, profileId) {
+  requireValue(viewerId, "viewerId");
+  requireValue(profileId, "profileId");
+  const isOwner = viewerId === profileId;
+  const profile = assertSupabaseResult(
+    await supabaseAdmin.from("profiles").select("*").eq("id", profileId).maybeSingle(),
+    "get profile visibility",
+  );
+  if (!profile) throw new Error("Profile not found");
+  if (!isOwner && profile.profile_visibility !== "public") {
+    const error = new Error("This profile is private.");
+    error.status = 403;
+    throw error;
+  }
+
+  let boardsRequest = supabaseAdmin.from("boards").select("*").eq("user_id", profileId).order("created_at", { ascending: false });
+  if (!isOwner) boardsRequest = boardsRequest.eq("visibility", "public");
+  const boards = assertSupabaseResult(await boardsRequest, "get visible boards");
+  const boardIds = boards.map((board) => board.id);
+  if (!boardIds.length) return { profile: mapProfile(profile), boards: [], isOwner };
+
+  const pinRows = assertSupabaseResult(
+    await supabaseAdmin
+      .from("pins")
+      .select("id, board_id, image_url, created_at")
+      .eq("user_id", profileId)
+      .in("board_id", boardIds)
+      .order("created_at", { ascending: false }),
+    "get visible board previews",
+  );
+
+  const pinsByBoardId = pinRows.reduce((groups, pin) => {
+    groups[pin.board_id] ||= [];
+    groups[pin.board_id].push(pin);
+    return groups;
+  }, {});
+
+  return {
+    profile: mapProfile(profile),
+    boards: boards.map((board) => mapBoard(board, pinsByBoardId[board.id] || [], pinsByBoardId[board.id] || [])),
+    isOwner,
+  };
+}
+
+export async function getVisibleBoardWithPins(viewerId, profileId, boardId) {
+  requireValue(viewerId, "viewerId");
+  requireValue(profileId, "profileId");
+  requireValue(boardId, "boardId");
+  const { profile, isOwner } = await getVisibleBoardsForProfile(viewerId, profileId);
+
+  let boardRequest = supabaseAdmin.from("boards").select("*").eq("user_id", profileId).eq("id", boardId);
+  if (!isOwner) boardRequest = boardRequest.eq("visibility", "public");
+  const board = assertSupabaseResult(await boardRequest.maybeSingle(), "get visible board");
+  if (!board) {
+    const error = new Error("Board not found");
+    error.status = 404;
+    throw error;
+  }
+  if (!isOwner && profile.profileVisibility !== "public") {
+    const error = new Error("This profile is private.");
+    error.status = 403;
+    throw error;
+  }
+
+  const pins = assertSupabaseResult(
+    await supabaseAdmin
+      .from("pins")
+      .select("*")
+      .eq("user_id", profileId)
+      .eq("board_id", boardId)
+      .order("created_at", { ascending: false }),
+    "get visible board pins",
+  );
+  return { profile, board: mapBoard(board, pins), pins: pins.map(mapPin), isOwner };
 }
 
 export async function getBoardWithPins(userId, boardId) {
@@ -207,6 +402,7 @@ export async function createBoard(userId, boardData = {}) {
     aesthetic: boardData.aesthetic || "curated visual inspiration",
     cover_image_url: boardData.coverImageUrl || boardData.cover_image_url || null,
     pinterest_board_id: boardData.pinterestBoardId || boardData.pinterest_board_id || null,
+    visibility: normalizeVisibility(boardData.visibility, "private"),
   };
 
   const board = assertSupabaseResult(
@@ -231,6 +427,7 @@ export async function updateBoard(userId, boardId, boardData = {}) {
     updates.pinterest_board_id = (boardData.pinterestBoardId || boardData.pinterest_board_id || "").trim() || null;
   }
   if (boardData.cover_image_url !== undefined) updates.cover_image_url = boardData.cover_image_url || null;
+  if (boardData.visibility !== undefined) updates.visibility = normalizeVisibility(boardData.visibility);
 
   const board = assertSupabaseResult(
     await supabaseAdmin.from("boards").update(updates).eq("user_id", userId).eq("id", boardId).select("*").maybeSingle(),

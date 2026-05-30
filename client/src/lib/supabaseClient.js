@@ -20,10 +20,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 export async function upsertUserProfile(user) {
   if (!user?.id) return;
 
+  const { data: existing, error: lookupError } = await supabase.from("profiles").select("id").eq("id", user.id).maybeSingle();
+  if (lookupError) throw lookupError;
+  if (existing) return;
+
   const displayName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "PinMind user";
   const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
 
-  const { error } = await supabase.from("profiles").upsert({
+  const { error } = await supabase.from("profiles").insert({
     id: user.id,
     display_name: displayName,
     avatar_url: avatarUrl,

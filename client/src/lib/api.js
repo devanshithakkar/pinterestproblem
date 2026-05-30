@@ -107,9 +107,20 @@ async function autonomousSaveUpload(file) {
 }
 
 export const api = {
+  getMe: () => request("/api/me"),
+  updateProfile: (payload) => request("/api/me/profile", { method: "PATCH", body: JSON.stringify(payload) }),
+  searchUsers: ({ query = "", page = 1 } = {}) => {
+    const params = new URLSearchParams({ q: query, page: String(page) });
+    return request(`/api/users?${params.toString()}`);
+  },
+  getPublicProfile: (username) => request(`/api/users/${encodeURIComponent(username)}`),
+  getPublicUserBoards: (username) => request(`/api/users/${encodeURIComponent(username)}/boards`),
+  getPublicUserBoard: (username, boardId) => request(`/api/users/${encodeURIComponent(username)}/boards/${boardId}`),
   getBoards: () => request("/api/boards"),
   createBoard: (payload) => request("/api/boards", { method: "POST", body: JSON.stringify(payload) }),
   updateBoard: (boardId, payload) => request(`/api/boards/${boardId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  updateBoardVisibility: (boardId, visibility) =>
+    request(`/api/boards/${boardId}/visibility`, { method: "PATCH", body: JSON.stringify({ visibility }) }),
   deleteBoard: (boardId) => request(`/api/boards/${boardId}`, { method: "DELETE" }),
   getBoard: (id) => request(`/api/boards/${id}`),
   searchLibrary: ({ query, provider = "pexels", page = 1 }) => {

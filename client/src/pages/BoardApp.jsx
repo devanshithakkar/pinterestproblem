@@ -14,6 +14,7 @@ import {
   Sparkles,
   Trash2,
   UploadCloud,
+  Users,
   WandSparkles,
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -23,8 +24,10 @@ import BoardCardGrid from "../components/BoardCardGrid";
 import BoardSkeleton from "../components/BoardSkeleton";
 import CreateBoardModal from "../components/CreateBoardModal";
 import ExploreLibrary from "../components/ExploreLibrary";
+import ExploreUsers from "../components/ExploreUsers";
 import MasonryGrid from "../components/MasonryGrid";
 import PinPreviewModal from "../components/PinPreviewModal";
+import ProfileSettingsModal from "../components/ProfileSettingsModal";
 import RecommendationStrip from "../components/RecommendationStrip";
 import UploadModal from "../components/UploadModal";
 
@@ -44,6 +47,7 @@ export default function BoardApp({
   const [loadingBoard, setLoadingBoard] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showCreateBoard, setShowCreateBoard] = useState(false);
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [mobileBoardsOpen, setMobileBoardsOpen] = useState(false);
   const [localError, setLocalError] = useState("");
   const [activeView, setActiveView] = useState("organizer");
@@ -57,6 +61,7 @@ export default function BoardApp({
   const mobileNavItems = [
     { id: "organizer", label: "Boards", icon: Home },
     { id: "explore", label: "Explore", icon: Images },
+    { id: "users", label: "People", icon: Users },
     { id: "overview", label: "Overview", icon: LayoutGrid },
     { id: "suggestions", label: "AI", icon: WandSparkles },
   ];
@@ -137,12 +142,15 @@ export default function BoardApp({
     if (name === null) return;
     const description = window.prompt("Board description", activeBoard.description || "") ?? activeBoard.description;
     const tags = window.prompt("Keywords/tags, comma separated", (activeBoard.tags || []).join(", ")) ?? (activeBoard.tags || []).join(", ");
+    const visibilityPrompt = window.prompt("Visibility: private or public", activeBoard.visibility || "private");
+    const visibility = visibilityPrompt ?? activeBoard.visibility ?? "private";
     setLocalError("");
     try {
       const { board } = await api.updateBoard(activeBoard.id, {
         name,
         description,
         tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+        visibility: visibility.trim().toLowerCase(),
       });
       await onBoardCreated(board);
     } catch (err) {
@@ -239,6 +247,7 @@ export default function BoardApp({
         onViewChange={setActiveView}
         onSelectBoard={onSelectBoard}
         onCreateBoard={() => setShowCreateBoard(true)}
+        onProfileSettings={() => setShowProfileSettings(true)}
         onBackHome={onBackHome}
         user={user}
       />
@@ -258,10 +267,10 @@ export default function BoardApp({
               </button>
               <div className="min-w-0">
                 <p className="truncate text-xs font-black uppercase text-ember">
-                  {activeView === "explore" ? "Image discovery" : "Smart board"}
+                  {activeView === "explore" ? "Image discovery" : activeView === "users" ? "User discovery" : "Smart board"}
                 </p>
                 <h1 className="truncate text-2xl font-black sm:text-4xl">
-                  {activeView === "explore" ? "Explore" : activeBoard?.name || "Boards"}
+                  {activeView === "explore" ? "Explore" : activeView === "users" ? "People" : activeBoard?.name || "Boards"}
                 </h1>
               </div>
             </div>
@@ -278,6 +287,13 @@ export default function BoardApp({
                     {(user?.email || "P")[0].toUpperCase()}
                   </span>
                 )}
+                <button
+                  onClick={() => setShowProfileSettings(true)}
+                  className="grid h-8 w-8 place-items-center rounded-full bg-white/70 text-black/55 hover:bg-black/5"
+                  aria-label="Profile settings"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
                 <button
                   onClick={() => supabase.auth.signOut()}
                   className="grid h-8 w-8 place-items-center rounded-full bg-white/70 text-black/55 hover:bg-blush hover:text-ember"
@@ -334,10 +350,13 @@ export default function BoardApp({
         <div className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:pb-6">
           {error || localError ? <div className="mb-4 rounded-2xl bg-blush p-4 font-bold text-ember">{localError || error}</div> : null}
 
-          {activeView !== "explore" ? (
+          {activeView !== "explore" && activeView !== "users" ? (
             <section className="mb-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
               <div className="glass-panel p-5">
                 <p className="text-sm font-black uppercase text-ember">{activeBoard?.pinCount ?? pins.length} saved pins</p>
+                <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black ${activeBoard?.visibility === "public" ? "bg-moss/10 text-moss" : "bg-black/5 text-black/45"}`}>
+                  {activeBoard?.visibility === "public" ? "Public board" : "Private board"}
+                </span>
                 <h2 className="mt-1 text-3xl font-black">
                   {activeBoard?.description || "Start by exploring images and Smart Saving your first idea."}
                 </h2>
@@ -382,7 +401,7 @@ export default function BoardApp({
             </section>
           ) : null}
 
-          {activeView !== "explore" && activeBoard ? (
+          {activeView !== "explore" && activeView !== "users" && activeBoard ? (
             <section className="mb-6 rounded-[2rem] border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur-xl">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div className="min-w-0">
@@ -434,6 +453,8 @@ export default function BoardApp({
 
           {activeView === "explore" ? (
             <ExploreLibrary boards={boards} onSaved={handlePinSaved} onBoardCreated={onBoardCreated} />
+          ) : activeView === "users" ? (
+            <ExploreUsers />
           ) : loadingBoard ? (
             <BoardSkeleton />
           ) : (
@@ -480,6 +501,7 @@ export default function BoardApp({
         />
       ) : null}
       {showCreateBoard ? <CreateBoardModal onClose={() => setShowCreateBoard(false)} onCreated={onBoardCreated} /> : null}
+      {showProfileSettings ? <ProfileSettingsModal user={user} onClose={() => setShowProfileSettings(false)} /> : null}
       {previewPin ? (
         <PinPreviewModal
           pin={previewPin}
@@ -489,7 +511,7 @@ export default function BoardApp({
       ) : null}
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/82 px-2 py-2 shadow-[0_-16px_50px_rgba(23,20,18,0.12)] backdrop-blur-2xl lg:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+        <div className="mx-auto grid max-w-lg grid-cols-6 gap-1">
           {mobileNavItems.map((item) => {
             const Icon = item.icon;
             const active = activeView === item.id;

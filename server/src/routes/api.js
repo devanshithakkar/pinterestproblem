@@ -15,11 +15,17 @@ import {
   getAiTrainingData,
   getBoardWithPins,
   getBoards,
+  getProfile,
+  getProfileByUsername,
   getPinWithBoard,
   getPins,
+  getVisibleBoardsForProfile,
+  getVisibleBoardWithPins,
   movePin,
   savePrediction,
+  searchPublicUsers,
   updateBoard,
+  updateProfile,
   updatePin,
   updatePinPinterestStatus,
 } from "../services/databaseService.js";
@@ -841,6 +847,90 @@ apiRouter.get("/pinterest/status", (_req, res) => {
   res.json({ configured: isPinterestConfigured() });
 });
 
+apiRouter.get("/me", async (req, res) => {
+  try {
+    const profile = await getProfile(req.user.id);
+    res.json({ user: req.user, profile });
+  } catch (error) {
+    console.error("Failed to load current profile", error);
+    res.status(500).json({ message: "Unable to load your profile." });
+  }
+});
+
+apiRouter.patch("/me/profile", async (req, res) => {
+  try {
+    const profile = await updateProfile(req.user.id, req.body);
+    res.json({ profile });
+  } catch (error) {
+    if (/Username|Visibility|duplicate key|unique/i.test(error.message)) {
+      return res.status(400).json({ message: error.message.includes("duplicate") ? "Username is already taken." : error.message });
+    }
+    console.error("Failed to update profile", error);
+    res.status(500).json({ message: "Unable to update your profile." });
+  }
+});
+
+apiRouter.get("/users", async (req, res) => {
+  try {
+    const result = await searchPublicUsers({
+      query: req.query.q || "",
+      page: req.query.page || 1,
+      limit: req.query.limit || 20,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("Failed to search public users", error);
+    res.status(500).json({ message: "Unable to search public users." });
+  }
+});
+
+apiRouter.get("/users/:username", async (req, res) => {
+  try {
+    const profile = await getProfileByUsername(req.params.username);
+    const isOwner = profile.id === req.user.id;
+    if (!isOwner && profile.profileVisibility !== "public") {
+      return res.status(403).json({ message: "This profile is private.", profile: { username: profile.username } });
+    }
+    res.json({ profile, isOwner });
+  } catch (error) {
+    if (error.message === "Profile not found" || /Username/.test(error.message)) {
+      return res.status(404).json({ message: "Profile not found" });
+    }
+    console.error("Failed to load public profile", error);
+    res.status(500).json({ message: "Unable to load this profile." });
+  }
+});
+
+apiRouter.get("/users/:username/boards", async (req, res) => {
+  try {
+    const profile = await getProfileByUsername(req.params.username);
+    const result = await getVisibleBoardsForProfile(req.user.id, profile.id);
+    res.json(result);
+  } catch (error) {
+    if (error.status === 403) return res.status(403).json({ message: error.message });
+    if (error.message === "Profile not found" || /Username/.test(error.message)) {
+      return res.status(404).json({ message: "Profile not found" });
+    }
+    console.error("Failed to load public boards", error);
+    res.status(500).json({ message: "Unable to load public boards." });
+  }
+});
+
+apiRouter.get("/users/:username/boards/:boardId", async (req, res) => {
+  try {
+    const profile = await getProfileByUsername(req.params.username);
+    const result = await getVisibleBoardWithPins(req.user.id, profile.id, req.params.boardId);
+    res.json(result);
+  } catch (error) {
+    if (error.status === 403) return res.status(403).json({ message: error.message });
+    if (error.status === 404 || error.message === "Profile not found" || /Username/.test(error.message)) {
+      return res.status(404).json({ message: "Board or profile not found" });
+    }
+    console.error("Failed to load public board", error);
+    res.status(500).json({ message: "Unable to load this public board." });
+  }
+});
+
 apiRouter.post("/boards", async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -868,6 +958,18 @@ apiRouter.patch("/boards/:id", async (req, res) => {
     if (error.message === "Board not found") return res.status(404).json({ message: "Board not found" });
     console.error("Failed to update board", error);
     res.status(500).json({ message: "Unable to update this board." });
+  }
+});
+
+apiRouter.patch("/boards/:id/visibility", async (req, res) => {
+  try {
+    const board = await updateBoard(req.user.id, req.params.id, { visibility: req.body.visibility });
+    res.json({ board });
+  } catch (error) {
+    if (error.message === "Board not found") return res.status(404).json({ message: "Board not found" });
+    if (/Visibility/.test(error.message)) return res.status(400).json({ message: error.message });
+    console.error("Failed to update board visibility", error);
+    res.status(500).json({ message: "Unable to update board visibility." });
   }
 });
 

@@ -60,6 +60,48 @@ Users sign in with Google through Supabase Auth. Boards, pins, AI prediction row
 
 Local uploaded images are sent to the backend with multipart upload, then uploaded to a Supabase Storage bucket named `pin-images`. External image URLs continue to work directly.
 
+## Profiles And Privacy
+
+PinMind supports editable user profiles and public/private visibility.
+
+Profile fields:
+
+- `username` is lowercase, unique, and used for `/u/:username` public pages.
+- `display_name`, `avatar_url`, `bio`, `website_url`, `location`, and `interests` power the profile page.
+- `profile_visibility` is `private` by default and can be changed to `public`.
+
+Board privacy:
+
+- Boards have `visibility`, defaulting to `private`.
+- Smart Save-created boards stay private unless the owner changes them later.
+- Pins inherit visibility from their board.
+
+Privacy model:
+
+- Owners always see their own profile, boards, and pins.
+- Other logged-in users can only see profiles where `profile_visibility = 'public'`.
+- Other logged-in users can only see boards where the owner profile is public and the board `visibility = 'public'`.
+- Private pins are never returned through public profile routes.
+- Frontend hiding is only a convenience; backend routes and Supabase RLS enforce ownership and visibility.
+
+Public profile routes:
+
+- `GET /api/me`
+- `PATCH /api/me/profile`
+- `GET /api/users?q=&page=`
+- `GET /api/users/:username`
+- `GET /api/users/:username/boards`
+- `GET /api/users/:username/boards/:boardId`
+- `PATCH /api/boards/:id/visibility`
+
+Future profile improvements:
+
+- Avatar uploads with Supabase Storage.
+- Follow system.
+- Likes and bookmarks.
+- Public board sharing links.
+- Collaborative boards.
+
 ## Auth Flow
 
 1. The frontend creates a Supabase client with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.

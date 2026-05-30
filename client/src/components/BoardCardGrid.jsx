@@ -66,7 +66,9 @@ export default function BoardCardGrid({ boards, activeBoardId, onSelectBoard }) 
             </div>
             <div className="relative mt-4 flex items-center justify-between text-xs font-black text-black/45">
               <span>{board.pinCount} pins</span>
-              <span>AI rank #{index + 1}</span>
+              <span className={board.visibility === "public" ? "text-moss" : "text-black/40"}>
+                {board.visibility === "public" ? "Public" : "Private"} · AI #{index + 1}
+              </span>
             </div>
           </button>
         ))}

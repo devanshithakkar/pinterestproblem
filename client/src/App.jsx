@@ -6,6 +6,7 @@ import { supabase, upsertUserProfile } from "./lib/supabaseClient";
 import AuthGate from "./components/AuthGate";
 import LandingPage from "./pages/LandingPage";
 import BoardApp from "./pages/BoardApp";
+import PublicProfilePage from "./pages/PublicProfilePage";
 
 export default function App() {
   const [showApp, setShowApp] = useState(false);
@@ -16,6 +17,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [authError, setAuthError] = useState("");
+  const publicProfileMatch = window.location.pathname.match(/^\/u\/([^/]+)\/?$/);
+  const publicProfileUsername = publicProfileMatch?.[1] ? decodeURIComponent(publicProfileMatch[1]) : null;
 
   async function loadBoards(preferredId) {
     setError("");
@@ -131,6 +134,15 @@ export default function App() {
           </div>
         ) : !session ? (
           <AuthGate key="auth" authError={authError} />
+        ) : publicProfileUsername ? (
+          <PublicProfilePage
+            key={`profile-${publicProfileUsername}`}
+            username={publicProfileUsername}
+            onBack={() => {
+              window.history.pushState({}, "", "/");
+              setShowApp(true);
+            }}
+          />
         ) : !showApp ? (
           <LandingPage key="landing" onEnter={() => setShowApp(true)} boards={boards} user={session.user} />
         ) : (

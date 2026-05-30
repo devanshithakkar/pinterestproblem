@@ -1,10 +1,11 @@
-import { GalleryVerticalEnd, Home, Images, LayoutGrid, LogOut, Plus, Search, Sparkles, WandSparkles } from "lucide-react";
+import { GalleryVerticalEnd, Home, Images, LayoutGrid, LogOut, Plus, Search, Settings, Sparkles, Users, WandSparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
 const navItems = [
   { id: "organizer", label: "Smart organizer", icon: Home, color: "text-white" },
   { id: "explore", label: "Explore library", icon: Images, color: "text-ember" },
+  { id: "users", label: "Explore users", icon: Users, color: "text-moss" },
   { id: "overview", label: "Board overview", icon: LayoutGrid, color: "text-ember" },
   { id: "suggestions", label: "AI suggestions", icon: WandSparkles, color: "text-moss" },
 ];
@@ -16,6 +17,7 @@ export default function BoardSidebar({
   onViewChange,
   onSelectBoard,
   onCreateBoard,
+  onProfileSettings,
   onBackHome,
   user,
 }) {
@@ -51,6 +53,13 @@ export default function BoardSidebar({
             <span className="block truncate text-xs font-semibold text-black/45">{user?.email}</span>
           </span>
         </span>
+        <button
+          onClick={onProfileSettings}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/70 text-black/55 hover:bg-black/5"
+          aria-label="Profile settings"
+        >
+          <Settings className="h-4 w-4" />
+        </button>
         <button
           onClick={() => supabase.auth.signOut()}
           className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/70 text-black/55 hover:bg-blush hover:text-ember"
