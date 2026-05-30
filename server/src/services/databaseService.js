@@ -33,7 +33,6 @@ function mapBoard(row, pins = [], previewPins = pins) {
     tags: row.tags || [],
     aesthetic: row.aesthetic,
     coverImageUrl: row.cover_image_url,
-    pinterestBoardId: row.pinterest_board_id,
     visibility: row.visibility || "private",
     pinCount: pins.length,
     previews: previewPins.slice(0, 4).map((pin) => pin.image_url),
@@ -73,10 +72,6 @@ function mapPin(row) {
     source: row.source,
     height: row.height,
     correctedAt: row.corrected_at,
-    pinterestPinId: row.pinterest_pin_id,
-    pinterestPublishedAt: row.pinterest_published_at,
-    pinterestPublishStatus: row.pinterest_publish_status || "not_published",
-    pinterestPublishError: row.pinterest_publish_error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -401,7 +396,6 @@ export async function createBoard(userId, boardData = {}) {
     tags: normalizeTags(boardData.tags?.length ? boardData.tags : boardData.name?.toLowerCase().split(/\s+/) || []),
     aesthetic: boardData.aesthetic || "curated visual inspiration",
     cover_image_url: boardData.coverImageUrl || boardData.cover_image_url || null,
-    pinterest_board_id: boardData.pinterestBoardId || boardData.pinterest_board_id || null,
     visibility: normalizeVisibility(boardData.visibility, "private"),
   };
 
@@ -423,9 +417,6 @@ export async function updateBoard(userId, boardId, boardData = {}) {
   if (boardData.tags !== undefined) updates.tags = normalizeTags(boardData.tags);
   if (boardData.aesthetic !== undefined) updates.aesthetic = boardData.aesthetic || "curated visual inspiration";
   if (boardData.coverImageUrl !== undefined) updates.cover_image_url = boardData.coverImageUrl || null;
-  if (boardData.pinterestBoardId !== undefined || boardData.pinterest_board_id !== undefined) {
-    updates.pinterest_board_id = (boardData.pinterestBoardId || boardData.pinterest_board_id || "").trim() || null;
-  }
   if (boardData.cover_image_url !== undefined) updates.cover_image_url = boardData.cover_image_url || null;
   if (boardData.visibility !== undefined) updates.visibility = normalizeVisibility(boardData.visibility);
 
@@ -471,43 +462,6 @@ export async function getPins(userId) {
   );
 
   return pins.map(mapPin);
-}
-
-export async function getPinWithBoard(userId, pinId) {
-  requireValue(userId, "userId");
-  requireValue(pinId, "pinId");
-
-  const pin = assertSupabaseResult(
-    await supabaseAdmin.from("pins").select("*").eq("user_id", userId).eq("id", pinId).maybeSingle(),
-    "get pin",
-  );
-  if (!pin) throw new Error("Pin not found");
-
-  const board = assertSupabaseResult(
-    await supabaseAdmin.from("boards").select("*").eq("user_id", userId).eq("id", pin.board_id).maybeSingle(),
-    "get pin board",
-  );
-  if (!board) throw new Error("Board not found");
-
-  return { pin: mapPin(pin), board: mapBoard(board, [pin]) };
-}
-
-export async function updatePinPinterestStatus(userId, pinId, updates = {}) {
-  requireValue(userId, "userId");
-  requireValue(pinId, "pinId");
-
-  const row = {};
-  if (updates.pinterestPinId !== undefined) row.pinterest_pin_id = updates.pinterestPinId || null;
-  if (updates.pinterestPublishedAt !== undefined) row.pinterest_published_at = updates.pinterestPublishedAt || null;
-  if (updates.pinterestPublishStatus !== undefined) row.pinterest_publish_status = updates.pinterestPublishStatus;
-  if (updates.pinterestPublishError !== undefined) row.pinterest_publish_error = updates.pinterestPublishError || null;
-
-  const pin = assertSupabaseResult(
-    await supabaseAdmin.from("pins").update(row).eq("user_id", userId).eq("id", pinId).select("*").maybeSingle(),
-    "update pin Pinterest status",
-  );
-  if (!pin) throw new Error("Pin not found");
-  return mapPin(pin);
 }
 
 export async function getAiTrainingData(userId) {

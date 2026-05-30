@@ -4,13 +4,10 @@ export default function MasonryGrid({
   pins,
   boards,
   activeBoard,
-  pinterestConfigured,
-  publishingPinId,
   onMovePin,
   onUpdatePin,
   onDeletePin,
   onPreviewPin,
-  onPublishPinterest,
 }) {
   if (!pins.length) {
     return (
@@ -29,13 +26,10 @@ export default function MasonryGrid({
           pin={pin}
           boards={boards}
           activeBoard={activeBoard}
-          pinterestConfigured={pinterestConfigured}
-          publishingPinId={publishingPinId}
           onMovePin={onMovePin}
           onUpdatePin={onUpdatePin}
           onDeletePin={onDeletePin}
           onPreviewPin={onPreviewPin}
-          onPublishPinterest={onPublishPinterest}
         />
       ))}
     </div>

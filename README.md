@@ -40,7 +40,6 @@ pinterestproblem-main/
         aiService.js        board matching and confidence decision logic
         visionService.js    OpenAI/Gemini/mock image analysis
         storageService.js   Supabase Storage upload helper
-        pinterestService.js Pinterest publishing helper
 ```
 
 ## Data Source
@@ -52,7 +51,6 @@ Supabase Cloud is the single source of truth for active app data:
 - `pins`
 - `ai_predictions`
 - `image_sources`
-- `pinterest_accounts`
 
 `server/data/db.json` is kept only as backup/demo data and should not be deleted.
 
@@ -284,9 +282,6 @@ All endpoints below except `/api/health` require `Authorization: Bearer <Supabas
 | POST | `/api/ai/confirm-save` | Save after a user confirms a board |
 | POST | `/api/ai/create-board-and-save` | Create suggested board and save the pin |
 | GET | `/api/recommendations/:boardId` | Load board recommendations |
-| GET | `/api/pinterest/status` | Check whether backend Pinterest publishing is configured |
-| PATCH | `/api/boards/:boardId/pinterest` | Save a Pinterest Board ID for a PinMind board |
-| POST | `/api/pinterest/publish/:pinId` | Publish a saved PinMind pin to Pinterest |
 
 ## Environment Variables
 
@@ -304,8 +299,6 @@ GEMINI_API_KEY=
 GEMINI_VISION_MODEL=gemini-2.5-flash
 PEXELS_API_KEY=
 UNSPLASH_ACCESS_KEY=
-PINTEREST_ACCESS_TOKEN=
-PINTEREST_API_BASE=https://api.pinterest.com/v5
 ```
 
 Frontend, in `client/.env` locally and the frontend Vercel project:
@@ -327,7 +320,6 @@ VITE_API_BASE_URL=https://your-backend-vercel-url
 Never add `SUPABASE_SERVICE_ROLE_KEY` to the frontend project.
 Never add `OPENAI_API_KEY` or `GEMINI_API_KEY` to the frontend project.
 Never add `PEXELS_API_KEY` or `UNSPLASH_ACCESS_KEY` to the frontend project.
-Never add `PINTEREST_ACCESS_TOKEN` to the frontend project.
 
 ## Image Library Providers
 
@@ -344,28 +336,6 @@ Supported providers:
 - `provider=all`
 
 Pexels and Unsplash are optional backend-only providers. If a provider key is missing or the provider request fails, PinMind falls back to mock discovery images. The frontend never calls Pexels or Unsplash directly; it only calls the PinMind backend.
-
-## Pinterest Publishing
-
-Pinterest publishing is optional and backend-only. Put the Pinterest token in `server/.env` for local development and in the backend Vercel project for production:
-
-```text
-PINTEREST_ACCESS_TOKEN=
-PINTEREST_API_BASE=https://api.pinterest.com/v5
-```
-
-Do not put the token in `client/.env`, Vite variables, frontend code, or any public repository file.
-
-The Pinterest app/token needs permission to create pins. Use `pins:write`; add `boards:read` if you later build a Pinterest board picker or validator.
-
-Publishing flow:
-
-1. Open a PinMind board.
-2. Paste the matching Pinterest Board ID into the `Pinterest Board ID` field.
-3. Save the board setting.
-4. Use `Publish to Pinterest` on a saved pin card.
-
-If `PINTEREST_ACCESS_TOKEN` is missing, PinMind keeps working normally and the UI shows Pinterest publishing as disabled.
 
 ## Local Setup
 
@@ -457,8 +427,6 @@ Environment variables:
   GEMINI_VISION_MODEL
   PEXELS_API_KEY
   UNSPLASH_ACCESS_KEY
-  PINTEREST_ACCESS_TOKEN
-  PINTEREST_API_BASE
 ```
 
 Frontend project:
@@ -656,24 +624,6 @@ curl -sS -X POST "$API_URL/api/ai/undo-autonomous-save" \
   -d '{"pinId":"REPLACE_WITH_PIN_UUID","boardId":"REPLACE_WITH_BOARD_UUID","createdNewBoard":true}'
 ```
 
-Save a Pinterest Board ID to a PinMind board:
-
-```bash
-curl -sS -X PATCH "$API_URL/api/boards/REPLACE_WITH_BOARD_UUID/pinterest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-  -d '{"pinterestBoardId":"REPLACE_WITH_PINTEREST_BOARD_ID"}'
-```
-
-Publish a saved PinMind pin to Pinterest:
-
-```bash
-curl -sS -X POST "$API_URL/api/pinterest/publish/REPLACE_WITH_PIN_UUID" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-  -d '{}'
-```
-
 ## Frontend Test Flow
 
 1. Open `http://localhost:5173`.
@@ -701,7 +651,6 @@ curl -sS -X POST "$API_URL/api/pinterest/publish/REPLACE_WITH_PIN_UUID" \
 23. Close the preview with Escape and by clicking the backdrop.
 24. Switch to another browser tab, come back, and confirm boards remain visible.
 25. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
-26. Add a Pinterest Board ID to a board and publish one saved pin.
 
 Mobile checks:
 
@@ -723,7 +672,6 @@ Mobile checks:
 - Store image embeddings per pin and aggregate board embeddings.
 - Add private Storage buckets with signed URLs for stricter image privacy.
 - Move to private Supabase Storage buckets with signed URLs.
-- Add Pinterest board import and picker workflows.
 - Build a real recommendation engine with feedback loops.
 - Add pagination/search for very large boards.
 - Add automated route and component tests.

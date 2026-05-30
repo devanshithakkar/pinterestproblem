@@ -1,33 +1,14 @@
-import { ArrowRightLeft, CheckCircle2, Pencil, Send, Trash2, XCircle } from "lucide-react";
+import { ArrowRightLeft, CheckCircle2, Pencil, Trash2 } from "lucide-react";
 import ConfidenceBadge from "./ConfidenceBadge";
 
 export default function PinCard({
   pin,
   boards,
-  activeBoard,
-  pinterestConfigured,
-  publishingPinId,
   onMovePin,
   onUpdatePin,
   onDeletePin,
   onPreviewPin,
-  onPublishPinterest,
 }) {
-  const publishing = publishingPinId === pin.id || pin.pinterestPublishStatus === "publishing";
-  const published = pin.pinterestPublishStatus === "published";
-  const failed = pin.pinterestPublishStatus === "failed";
-  const hasPinterestBoard = Boolean(activeBoard?.pinterestBoardId);
-  const canPublish = pinterestConfigured && hasPinterestBoard && !published && !publishing;
-  const publishLabel = !pinterestConfigured
-    ? "Pinterest not configured"
-    : !hasPinterestBoard
-      ? "Add Pinterest board ID"
-      : published
-        ? "Published"
-        : publishing
-          ? "Publishing..."
-          : "Publish to Pinterest";
-
   return (
     <article className="group mb-4 break-inside-avoid overflow-hidden rounded-[1.6rem] border border-white/70 bg-white/62 shadow-sm backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift">
       <button
@@ -100,27 +81,6 @@ export default function PinCard({
             Delete
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => onPublishPinterest?.(pin.id)}
-          disabled={!canPublish}
-          className={`flex w-full items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-black shadow-sm transition ${
-            published
-              ? "bg-moss/12 text-moss"
-              : canPublish
-                ? "bg-black text-white hover:-translate-y-0.5 hover:shadow-soft"
-                : "bg-black/5 text-black/35"
-          }`}
-        >
-          {published ? <CheckCircle2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-          {publishLabel}
-        </button>
-        {failed ? (
-          <p className="flex items-start gap-1.5 text-xs font-bold leading-5 text-ember">
-            <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            {pin.pinterestPublishError || "Pinterest publishing failed."}
-          </p>
-        ) : null}
       </div>
     </article>
   );

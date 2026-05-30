@@ -5,7 +5,6 @@ import { analyzeImageForBoards, predictBoard, getRecommendations } from "../serv
 import { uploadImageBuffer } from "../services/storageService.js";
 import { analyzeImageWithVision } from "../services/visionService.js";
 import { searchImageLibrary } from "../services/imageLibraryService.js";
-import { createPinterestPin, isPinterestConfigured } from "../services/pinterestService.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
   createBoard,
@@ -17,7 +16,6 @@ import {
   getBoards,
   getProfile,
   getProfileByUsername,
-  getPinWithBoard,
   getPins,
   getVisibleBoardsForProfile,
   getVisibleBoardWithPins,
@@ -27,7 +25,6 @@ import {
   updateBoard,
   updateProfile,
   updatePin,
-  updatePinPinterestStatus,
 } from "../services/databaseService.js";
 
 export const apiRouter = express.Router();
@@ -843,10 +840,6 @@ apiRouter.get("/pins", async (_req, res) => {
   }
 });
 
-apiRouter.get("/pinterest/status", (_req, res) => {
-  res.json({ configured: isPinterestConfigured() });
-});
-
 apiRouter.get("/me", async (req, res) => {
   try {
     const profile = await getProfile(req.user.id);
@@ -981,21 +974,6 @@ apiRouter.delete("/boards/:id", async (req, res) => {
     if (error.message === "Board not found") return res.status(404).json({ message: "Board not found" });
     console.error("Failed to delete board", error);
     res.status(500).json({ message: "Unable to delete this board." });
-  }
-});
-
-apiRouter.patch("/boards/:boardId/pinterest", async (req, res) => {
-  try {
-    const pinterestBoardId = req.body.pinterestBoardId || req.body.pinterest_board_id || "";
-    const board = await updateBoard(req.user.id, req.params.boardId, { pinterestBoardId });
-    res.json({ board });
-  } catch (error) {
-    if (error.message === "Board not found") {
-      return res.status(404).json({ message: "Board not found" });
-    }
-
-    console.error("Failed to update Pinterest board mapping", error);
-    res.status(500).json({ message: "Unable to save Pinterest board settings." });
   }
 });
 
@@ -1262,59 +1240,6 @@ apiRouter.delete("/pins/:id", async (req, res) => {
     if (error.message === "Pin not found") return res.status(404).json({ message: "Pin not found" });
     console.error("Failed to delete pin", error);
     res.status(500).json({ message: "Unable to delete this pin." });
-  }
-});
-
-apiRouter.post("/pinterest/publish/:pinId", async (req, res) => {
-  try {
-    const userId = req.user.id;
-    if (!isPinterestConfigured()) {
-      return res.status(503).json({ message: "Pinterest publishing is not configured." });
-    }
-
-    const { pin, board } = await getPinWithBoard(userId, req.params.pinId);
-    if (!board.pinterestBoardId) {
-      return res.status(400).json({ message: "Add a Pinterest Board ID to this PinMind board before publishing." });
-    }
-    if (pin.pinterestPublishStatus === "published" && pin.pinterestPinId) {
-      return res.json({ pinterest: { id: pin.pinterestPinId, alreadyPublished: true }, pin });
-    }
-
-    await updatePinPinterestStatus(userId, pin.id, {
-      pinterestPublishStatus: "publishing",
-      pinterestPublishError: null,
-    });
-
-    const pinterest = await createPinterestPin({
-      boardId: board.pinterestBoardId,
-      imageUrl: pin.imageUrl,
-      title: pin.title,
-      description: pin.caption,
-      link: req.body.link || pin.imageUrl,
-    });
-
-    const updatedPin = await updatePinPinterestStatus(userId, pin.id, {
-      pinterestPinId: pinterest.id,
-      pinterestPublishedAt: new Date().toISOString(),
-      pinterestPublishStatus: "published",
-      pinterestPublishError: null,
-    });
-
-    res.status(201).json({ pinterest, pin: updatedPin });
-  } catch (error) {
-    console.error("Failed to publish pin to Pinterest", error.message);
-    const status = error.message === "Pin not found" || error.message === "Board not found" ? 404 : 500;
-    if (status !== 404) {
-      try {
-        await updatePinPinterestStatus(req.user.id, req.params.pinId, {
-          pinterestPublishStatus: "failed",
-          pinterestPublishError: error.message,
-        });
-      } catch {
-        // If the pin lookup itself failed, return the original publishing error.
-      }
-    }
-    res.status(status).json({ message: error.message || "Unable to publish this pin to Pinterest." });
   }
 });
 

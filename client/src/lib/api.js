@@ -142,14 +142,6 @@ export const api = {
   aiConfirmSave: (payload) => request("/api/ai/confirm-save", { method: "POST", body: JSON.stringify(payload) }),
   aiCreateBoardAndSave: (payload) =>
     request("/api/ai/create-board-and-save", { method: "POST", body: JSON.stringify(payload) }),
-  getPinterestStatus: () => request("/api/pinterest/status"),
-  updateBoardPinterest: (boardId, pinterestBoardId) =>
-    request(`/api/boards/${boardId}/pinterest`, {
-      method: "PATCH",
-      body: JSON.stringify({ pinterestBoardId }),
-    }),
-  publishPinterestPin: (pinId, payload = {}) =>
-    request(`/api/pinterest/publish/${pinId}`, { method: "POST", body: JSON.stringify(payload) }),
   savePin: (payload) => request("/api/pins", { method: "POST", body: JSON.stringify(payload) }),
   updatePin: (pinId, payload) => request(`/api/pins/${pinId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deletePin: (pinId) => request(`/api/pins/${pinId}`, { method: "DELETE" }),
