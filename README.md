@@ -72,6 +72,7 @@ Board privacy:
 
 - Boards have `visibility`, defaulting to `private`.
 - Smart Save-created boards stay private unless the owner changes them later.
+- Owners can toggle a board with the `Make Public` / `Make Private` controls on board cards and board details.
 - Pins inherit visibility from their board.
 
 Privacy model:
@@ -91,6 +92,12 @@ Public profile routes:
 - `GET /api/users/:username/boards`
 - `GET /api/users/:username/boards/:boardId`
 - `PATCH /api/boards/:id/visibility`
+
+Explore Users:
+
+- The People tab lists public profiles only.
+- Search is debounced and paginated through `GET /api/users?q=&page=&limit=20`.
+- Search responses are ignored if a newer request has already started, which keeps the profile cards and View Profile buttons responsive while typing quickly.
 
 Future profile improvements:
 
@@ -574,6 +581,35 @@ curl -sS -X PATCH "$API_URL/api/boards/REPLACE_WITH_BOARD_UUID" \
   -d '{"name":"Updated Board","description":"Updated description","tags":["updated","keywords"]}'
 ```
 
+Toggle board visibility:
+
+```bash
+curl -sS -X PATCH "$API_URL/api/boards/REPLACE_WITH_BOARD_UUID/visibility" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -d '{"visibility":"public"}'
+```
+
+Search public users:
+
+```bash
+curl -sS "$API_URL/api/users?q=SEARCH&page=1&limit=20" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+```
+
+Load a public profile and boards:
+
+```bash
+curl -sS "$API_URL/api/users/USERNAME" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+
+curl -sS "$API_URL/api/users/USERNAME/boards" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+
+curl -sS "$API_URL/api/users/USERNAME/boards/REPLACE_WITH_BOARD_UUID" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+```
+
 Delete a board and its pins:
 
 ```bash
@@ -631,26 +667,30 @@ curl -sS -X POST "$API_URL/api/ai/undo-autonomous-save" \
 3. Sign in with Google.
 4. Confirm the user avatar/name appears.
 5. Create a board, edit its name/description/tags, refresh, and confirm it persists.
-6. Delete a test board and confirm its pins are removed with it.
-7. Open a board and edit, move, and delete a pin.
-8. Upload an image that matches an existing board and confirm it auto-saves without another click.
-9. Upload an unrelated image and confirm PinMind creates a new board and saves without another click.
-10. Use Undo after an autonomous save.
-11. Use Move after an autonomous save.
-12. Rename the newly created board after an autonomous save.
-13. Smart Save an animal image from Explore and confirm Animals is created or reused.
-14. Smart Save another animal image and confirm the same Animals board is reused.
-15. Smart Save a room decor image and confirm Room Decor is used or created.
-16. Smart Save a coding image and confirm Coding / Tech is used or created.
-17. Smart Save a concert image and confirm Concerts / Music Events is used or created, not Vehicles.
-18. Smart Save a dress/fashion image and confirm Fashion is used or created, not Vehicles.
-19. Smart Save a campus/friends image and confirm Campus Life / Friends is used or created.
-20. Smart Save an unknown image twice and confirm Visual Inspiration is reused.
-21. Confirm no new board is created with a random name like `Fhrhaulsuxbcxzcrviqq Ideas`.
-22. Click a saved pin image and confirm the fullscreen preview opens.
-23. Close the preview with Escape and by clicking the backdrop.
-24. Switch to another browser tab, come back, and confirm boards remain visible.
-25. Sign out, sign in as another Google user, and confirm the first user's boards are not visible.
+6. Confirm the board is Private by default.
+7. Toggle the board to Public from the board card or board detail.
+8. Sign out, sign in as another Google user, search User A in People, and confirm only public boards are visible.
+9. Toggle the board back to Private as User A and confirm it disappears for User B.
+10. Delete a test board and confirm its pins are removed with it.
+11. Open a board and edit, move, and delete a pin.
+12. Upload an image that matches an existing board and confirm it auto-saves without another click.
+13. Upload an unrelated image and confirm PinMind creates a private new board and saves without another click.
+14. Use Undo after an autonomous save.
+15. Use Move after an autonomous save.
+16. Rename the newly created board after an autonomous save.
+17. Smart Save an animal image from Explore and confirm Animals is created or reused.
+18. Smart Save another animal image and confirm the same Animals board is reused.
+19. Smart Save a room decor image and confirm Room Decor is used or created.
+20. Smart Save a coding image and confirm Coding / Tech is used or created.
+21. Smart Save a concert image and confirm Concerts / Music Events is used or created, not Vehicles.
+22. Smart Save a dress/fashion image and confirm Fashion is used or created, not Vehicles.
+23. Smart Save a campus/friends image and confirm Campus Life / Friends is used or created.
+24. Smart Save an unknown image twice and confirm Visual Inspiration is reused.
+25. Confirm no new board is created with a random name like `Fhrhaulsuxbcxzcrviqq Ideas`.
+26. Click a saved pin image and confirm the fullscreen preview opens.
+27. Close the preview with Escape and by clicking the backdrop.
+28. Switch to another browser tab, come back, and confirm boards remain visible.
+29. In People, type quickly, confirm search does not freeze, and confirm View Profile still navigates.
 
 Mobile checks:
 

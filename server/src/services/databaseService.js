@@ -249,7 +249,7 @@ export async function searchPublicUsers({ query = "", page = 1, limit = 20 } = {
   const offset = (Math.max(1, Number(page) || 1) - 1) * safeLimit;
   let request = supabaseAdmin
     .from("profiles")
-    .select("*", { count: "exact" })
+    .select("id, username, display_name, avatar_url, bio, interests, profile_visibility, updated_at", { count: "exact" })
     .eq("profile_visibility", "public")
     .not("username", "is", null)
     .order("updated_at", { ascending: false })

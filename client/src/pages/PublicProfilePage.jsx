@@ -1,4 +1,4 @@
-import { ArrowLeft, EyeOff, ExternalLink, Loader2, Lock } from "lucide-react";
+import { ArrowLeft, EyeOff, ExternalLink, Globe2, Loader2, Lock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 
@@ -117,7 +117,9 @@ export default function PublicProfilePage({ username, onBack }) {
         {!boards.length ? (
           <section className="mt-6 rounded-[2rem] border border-dashed border-black/15 bg-white p-10 text-center">
             <Lock className="mx-auto h-8 w-8 text-black/30" />
-            <p className="mt-3 text-lg font-black">{data?.isOwner ? "No boards yet" : "No public boards yet"}</p>
+            <p className="mt-3 text-lg font-black">
+              {data?.isOwner ? "No boards yet" : "This user has not made any boards public yet."}
+            </p>
           </section>
         ) : (
           <div className="mt-6 grid gap-6 lg:grid-cols-[20rem_1fr]">
@@ -131,7 +133,10 @@ export default function PublicProfilePage({ username, onBack }) {
                   }`}
                 >
                   {board.name}
-                  <span className="mt-1 block text-xs opacity-60">{board.pinCount} pins</span>
+                  <span className="mt-1 flex items-center gap-2 text-xs opacity-60">
+                    {board.visibility === "public" ? <Globe2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                    {board.visibility === "public" ? "Public" : "Private"} · {board.pinCount} pins
+                  </span>
                 </button>
               ))}
             </aside>

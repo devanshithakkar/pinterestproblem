@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Home,
+  Globe2,
   Images,
   LayoutGrid,
   LogOut,
+  Lock,
   Menu,
   Pencil,
   Plus,
@@ -46,6 +48,7 @@ export default function BoardApp({
   const [showUpload, setShowUpload] = useState(false);
   const [showCreateBoard, setShowCreateBoard] = useState(false);
   const [showProfileSettings, setShowProfileSettings] = useState(false);
+  const [pendingVisibilityBoardId, setPendingVisibilityBoardId] = useState("");
   const [mobileBoardsOpen, setMobileBoardsOpen] = useState(false);
   const [localError, setLocalError] = useState("");
   const [activeView, setActiveView] = useState("organizer");
@@ -106,6 +109,22 @@ export default function BoardApp({
       await refresh(boardId);
     } catch (err) {
       setLocalError(err.message || "Unable to move this pin.");
+    }
+  }
+
+  async function toggleBoardVisibility(board = activeBoard) {
+    if (!board?.id || pendingVisibilityBoardId) return;
+    const visibility = board.visibility === "public" ? "private" : "public";
+    setPendingVisibilityBoardId(board.id);
+    setLocalError("");
+    try {
+      const { board: updatedBoard } = await api.updateBoardVisibility(board.id, visibility);
+      await onBoardCreated(updatedBoard);
+      if (updatedBoard.id === activeBoardId) await loadBoard(updatedBoard.id);
+    } catch (err) {
+      setLocalError(err.message || "Unable to update board visibility.");
+    } finally {
+      setPendingVisibilityBoardId("");
     }
   }
 
@@ -311,6 +330,19 @@ export default function BoardApp({
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button
                     type="button"
+                    onClick={() => toggleBoardVisibility(activeBoard)}
+                    disabled={pendingVisibilityBoardId === activeBoard?.id}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-ink px-4 py-3 text-sm font-black text-white shadow-sm disabled:opacity-50"
+                  >
+                    {activeBoard?.visibility === "public" ? <Lock className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
+                    {pendingVisibilityBoardId === activeBoard?.id
+                      ? "Updating..."
+                      : activeBoard?.visibility === "public"
+                        ? "Make Private"
+                        : "Make Public"}
+                  </button>
+                  <button
+                    type="button"
                     onClick={editActiveBoard}
                     className="inline-flex items-center gap-2 rounded-2xl bg-white/70 px-4 py-3 text-sm font-black text-black/60 shadow-sm ring-1 ring-white/70"
                   >
@@ -351,7 +383,13 @@ export default function BoardApp({
           ) : (
             <>
               {activeView === "organizer" || activeView === "overview" ? (
-                <BoardCardGrid boards={boards} activeBoardId={activeBoardId} onSelectBoard={onSelectBoard} />
+                <BoardCardGrid
+                  boards={boards}
+                  activeBoardId={activeBoardId}
+                  onSelectBoard={onSelectBoard}
+                  onToggleVisibility={toggleBoardVisibility}
+                  pendingVisibilityBoardId={pendingVisibilityBoardId}
+                />
               ) : null}
               {activeView === "organizer" ? (
                 <MasonryGrid
