@@ -339,13 +339,32 @@ function looksRandomToken(value = "") {
 }
 
 function metadataWords(analysis = {}, imageMetadata = {}) {
+  const weakContextWords = new Set([
+    "aesthetic",
+    "background",
+    "beautiful",
+    "green",
+    "grass",
+    "idea",
+    "ideas",
+    "image",
+    "inspiration",
+    "light",
+    "natural",
+    "outdoor",
+    "outdoors",
+    "photo",
+    "photography",
+    "sunlight",
+    "tree",
+    "trees",
+  ]);
   return [
     analysis.title,
     analysis.description,
     analysis.primarySubject,
     analysis.primaryCategory,
     analysis.category,
-    analysis.environment,
     analysis.eventType,
     analysis.peopleCount,
     ...(analysis.secondaryCategories || []),
@@ -365,13 +384,42 @@ function metadataWords(analysis = {}, imageMetadata = {}) {
     .join(" ")
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 2);
+    .filter((word) => word.length > 2 && !weakContextWords.has(word));
+}
+
+function priorityCategoryFromAnalysis(analysis = {}) {
+  const primary = String(analysis.primaryCategory || analysis.category || "").toLowerCase();
+  const subject = String(analysis.primarySubject || "").toLowerCase();
+  const objects = (analysis.detectedObjects || analysis.objects || []).map((item) => String(item).toLowerCase());
+  const tags = (analysis.detectedTags || []).map((item) => String(item).toLowerCase());
+  const hasAny = (...terms) => [primary, subject, ...objects, ...tags].some((value) => terms.some((term) => value.includes(term)));
+
+  if (analysis.isMusicOrConcert || hasAny("concert", "music", "festival", "stage", "singer", "band")) return "Concerts / Music Events";
+  if (analysis.isCampusOrFriends || hasAny("campus", "college", "university", "student", "friends", "group photo")) {
+    return "Campus Life / Friends";
+  }
+  if (analysis.isFashion || hasAny("fashion", "outfit", "dress", "streetwear", "clothing", "accessory")) return "Fashion";
+  if (analysis.isAnimal || hasAny("animal", "pet", "dog", "cat", "wildlife", "bird", "horse")) return "Animals";
+  if (analysis.isTech || hasAny("coding", "code", "dashboard", "laptop", "interface", "software", "tech")) return "Coding / Tech";
+  if (analysis.isFood || hasAny("food", "dessert", "drink", "meal", "recipe", "restaurant")) return "Food";
+  if (analysis.isAnimeOrIllustration || hasAny("anime", "manga", "illustration", "digital art", "character art")) {
+    return "Anime / Digital Art";
+  }
+  if (analysis.isVehicle || /^(vehicle|transportation|car|motorcycle|bike|bicycle|truck|bus)$/.test(primary)) return "Vehicles";
+  if (analysis.isInterior || hasAny("interior", "room", "furniture", "decor", "home")) return "Room Decor";
+  if (hasAny("flower", "forest", "mountain", "beach", "landscape", "plant", "garden", "nature")) return "Nature";
+  if (hasAny("sport", "fitness", "gym", "workout")) return "Fitness / Sports";
+  if (hasAny("architecture", "building", "city", "travel", "landmark")) return "Architecture / Travel";
+  if (hasAny("movie", "cinema", "film", "poster")) return "Movies / Cinema";
+  return null;
 }
 
 function getSuggestedBoardFromAnalysis(analysis = {}, imageMetadata = {}) {
   const words = metadataWords(analysis, imageMetadata);
   const wordSet = new Set(words);
   const flagMatch = categoryBoardMap.find((category) => (category.flags || []).some((flag) => analysis[flag]));
+  const priorityName = priorityCategoryFromAnalysis(analysis);
+  const priorityCategory = priorityName ? categoryBoardMap.find((category) => category.name === priorityName) : null;
   const primary = String(analysis.primaryCategory || analysis.category || "").toLowerCase();
   const subject = String(analysis.primarySubject || "").toLowerCase();
   const strictVehicle =
@@ -391,6 +439,15 @@ function getSuggestedBoardFromAnalysis(analysis = {}, imageMetadata = {}) {
   const requested = normalizeName(analysis.suggestedBoardName || imageMetadata.suggestedBoardName || "");
   const isGeneric = !requested || genericBoardNames.has(requested) || looksRandomToken(requested);
   const category = scored[0]?.score > 0 ? scored[0] : null;
+
+  if (priorityCategory) {
+    return {
+      name: priorityCategory.name,
+      description: priorityCategory.description,
+      keywords: priorityCategory.keywords.slice(0, 10),
+      rejectedGenericName: isGeneric ? analysis.suggestedBoardName || imageMetadata.suggestedBoardName || null : null,
+    };
+  }
 
   if (category && (isGeneric || scored[0].score >= 1)) {
     return {
@@ -452,7 +509,14 @@ function findReusableBoard(boards = [], suggestion) {
 }
 
 async function createAutonomousSave({ userId, body, analysis, decision, uploadResult = null }) {
-  const saveToExisting = decision.predictedBoard?.id && decision.confidence >= 0.78 && decision.action !== "suggest_new_board";
+  const predictedScore = (decision.scores || []).find((score) => score.boardId === decision.predictedBoard?.id);
+  const predictedBoardIsSafe =
+    predictedScore &&
+    predictedScore.categoryCompatible !== false &&
+    Number(predictedScore.penalty || 0) < 32 &&
+    Number(predictedScore.categoryScore || 0) >= 45;
+  const saveToExisting =
+    decision.predictedBoard?.id && decision.confidence >= 0.78 && decision.action !== "suggest_new_board" && predictedBoardIsSafe;
   if (saveToExisting) {
     const createdPin = await createPin(
       userId,
@@ -473,6 +537,20 @@ async function createAutonomousSave({ userId, body, analysis, decision, uploadRe
         reasoning: decision.reasoning,
         rejectedBoards: decision.scores || [],
         undoTokenOrIds: { pinId: createdPin.id, boardId: createdPin.boardId, createdNewBoard: false },
+        debug:
+          process.env.NODE_ENV === "production"
+            ? undefined
+            : {
+                analysisSummary: `${analysis.primarySubject || ""} / ${analysis.primaryCategory || ""}`.trim(),
+                chosenBoardName: decision.predictedBoard.name,
+                reusedExistingBoard: true,
+                createdNewBoard: false,
+                topBoardScores: decision.scores || [],
+                rejectedBoardNames: (decision.scores || []).map((score) => score.boardName),
+                rejectedReasons: (decision.scores || []).map((score) => score.rejectedReason).filter(Boolean),
+                categoryDecision: decision.predictedBoard.name,
+                sanitizedBoardName: decision.predictedBoard.name,
+              },
       },
     };
   }

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "migrate:supabase": "node scripts/migrateJsonToSupabase.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test:matching": "node scripts/testSmartSaveMatching.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.78.0",

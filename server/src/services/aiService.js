@@ -22,6 +22,7 @@ const stopWords = new Set([
   "height",
   "quick",
   "local",
+  "life",
   "upload",
   "uploaded",
   "fresh",
@@ -38,9 +39,30 @@ const stopWords = new Set([
   "reference",
 ]);
 
+const weakContextWords = new Set([
+  "aesthetic",
+  "background",
+  "beautiful",
+  "green",
+  "grass",
+  "idea",
+  "ideas",
+  "image",
+  "inspiration",
+  "light",
+  "natural",
+  "outdoor",
+  "outdoors",
+  "photo",
+  "photography",
+  "sunlight",
+  "tree",
+  "trees",
+]);
+
 const categoryGroups = {
   animal: ["animal", "animals", "pet", "pets", "dog", "cat", "puppy", "kitten", "bird", "wildlife", "horse", "rabbit"],
-  interior: ["interior", "decor", "room", "home", "living", "bedroom", "sofa", "lamp", "plant", "furniture", "shelf", "rug"],
+  interior: ["interior", "decor", "room", "home", "living", "bedroom", "sofa", "lamp", "furniture", "shelf", "rug"],
   food: ["food", "recipe", "recipes", "meal", "dish", "plate", "pasta", "dessert", "breakfast", "baking", "kitchen"],
   fashion: ["fashion", "outfit", "style", "streetwear", "dress", "shoe", "jewelry", "wardrobe", "clothing", "accessory"],
   tech: ["tech", "coding", "code", "developer", "dashboard", "terminal", "laptop", "screen", "ui", "interface", "software"],
@@ -48,7 +70,10 @@ const categoryGroups = {
   art: ["art", "painting", "poster", "graphic", "typography", "palette", "illustration", "design"],
   travel: ["travel", "beach", "city", "hotel", "map", "coast", "landscape", "trip", "passport"],
   fitness: ["fitness", "workout", "gym", "yoga", "running", "training", "wellness"],
-  nature: ["nature", "outdoor", "forest", "flower", "garden", "mountain", "landscape", "wildlife"],
+  nature: ["nature", "forest", "flower", "flowers", "garden", "mountain", "beach", "landscape", "wildlife", "plant", "plants"],
+  music: ["concert", "concerts", "music", "stage", "singer", "band", "festival", "performance", "crowd"],
+  campus: ["campus", "college", "student", "students", "friends", "friend", "group", "university", "classmate"],
+  vehicle: ["vehicle", "vehicles", "car", "cars", "bike", "bicycle", "motorcycle", "truck", "bus", "automotive"],
 };
 
 const categoryAliases = {
@@ -70,9 +95,70 @@ const categoryAliases = {
   cartoon: "anime",
   illustration: "anime",
   illustrated: "anime",
+  concert: "music",
+  concerts: "music",
+  music: "music",
+  "music event": "music",
+  "music events": "music",
+  festival: "music",
+  band: "music",
+  campus: "campus",
+  "campus life": "campus",
+  college: "campus",
+  friends: "campus",
+  "group photo": "campus",
+  "college memories": "campus",
+  student: "campus",
+  students: "campus",
+  transportation: "vehicle",
+  vehicle: "vehicle",
+  vehicles: "vehicle",
+  car: "vehicle",
+  cars: "vehicle",
+  bike: "vehicle",
+  bicycle: "vehicle",
+  motorcycle: "vehicle",
+  flower: "nature",
+  flowers: "nature",
+  forest: "nature",
+  plant: "nature",
+  plants: "nature",
+  landscape: "nature",
 };
 
 const categoryNames = Object.keys(categoryGroups);
+const directCategoryNames = new Set(categoryNames);
+const compatibleCategoryMap = {
+  animal: new Set(["animal", "nature"]),
+  nature: new Set(["nature", "animal", "travel"]),
+  music: new Set(["music"]),
+  campus: new Set(["campus"]),
+  fashion: new Set(["fashion"]),
+  tech: new Set(["tech"]),
+  food: new Set(["food"]),
+  vehicle: new Set(["vehicle"]),
+  interior: new Set(["interior"]),
+  anime: new Set(["anime", "art"]),
+  art: new Set(["art", "anime"]),
+  travel: new Set(["travel", "nature"]),
+  fitness: new Set(["fitness"]),
+};
+
+const categoryBoardNames = {
+  animal: "Animals",
+  nature: "Nature",
+  music: "Concerts / Music Events",
+  campus: "Campus Life / Friends",
+  fashion: "Fashion",
+  tech: "Coding / Tech",
+  food: "Food",
+  vehicle: "Vehicles",
+  interior: "Room Decor",
+  anime: "Anime / Digital Art",
+  art: "Anime / Digital Art",
+  travel: "Architecture / Travel",
+  fitness: "Fitness / Sports",
+};
 
 function normalizeTagList(tags = []) {
   if (Array.isArray(tags)) return tags.map(String).map((tag) => tag.trim()).filter(Boolean);
@@ -95,7 +181,7 @@ function tokenize(value = "") {
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .map((word) => word.trim())
-    .filter((word) => word.length > 2 && !stopWords.has(word));
+    .filter((word) => word.length > 2 && !stopWords.has(word) && !weakContextWords.has(word));
 }
 
 function uniqueKeywords(values) {
@@ -112,13 +198,26 @@ function canonicalCategory(value = "") {
   return match || raw;
 }
 
+function primaryCategoryFromFlags(image = {}, fallback = "other") {
+  if (image.isMusicOrConcert) return "music";
+  if (image.isCampusOrFriends) return "campus";
+  if (image.isVehicle) return "vehicle";
+  if (image.isAnimal) return "animal";
+  if (image.isFashion) return "fashion";
+  if (image.isTech) return "tech";
+  if (image.isFood) return "food";
+  if (image.isAnimeOrIllustration) return "anime";
+  if (image.isInterior) return "interior";
+  return fallback;
+}
+
 function categoriesFromKeywords(keywords = []) {
   const scores = Object.fromEntries(categoryNames.map((name) => [name, 0]));
   keywords.forEach((keyword) => {
     categoryNames.forEach((category) => {
       const lexicon = categoryGroups[category];
       if (lexicon.includes(keyword)) scores[category] += 2;
-      if (lexicon.some((term) => term.length >= 4 && keyword.length >= 4 && (keyword.includes(term) || term.includes(keyword)))) {
+      if (lexicon.some((term) => term.length >= 5 && keyword.length >= term.length + 2 && keyword.includes(term))) {
         scores[category] += 0.7;
       }
     });
@@ -141,9 +240,6 @@ function overlapScore(a = [], b = []) {
 
 function getImageKeywords(payload = {}) {
   const imageTags = normalizeTagList(payload.tags || payload.detectedTags);
-  const urlText = String(payload.imageUrl || payload.image_url || "")
-    .split(/[/?#&=._-]/)
-    .join(" ");
 
   return uniqueKeywords([
     payload.title,
@@ -159,10 +255,8 @@ function getImageKeywords(payload = {}) {
     compactText(payload.style),
     compactText(payload.colors),
     compactText(payload.mood),
-    payload.environment,
     payload.suggestedBoardName,
     payload.source,
-    urlText,
     imageTags.join(" "),
   ]);
 }
@@ -170,7 +264,9 @@ function getImageKeywords(payload = {}) {
 function getImageProfile(image = {}) {
   const keywords = getImageKeywords(image);
   const inferredCategories = categoriesFromKeywords(keywords);
-  const primaryCategory = canonicalCategory(image.primaryCategory || image.category || inferredCategories[0] || "other");
+  const rawPrimaryCategory = canonicalCategory(image.primaryCategory || image.category || inferredCategories[0] || "other");
+  const primaryCategory = primaryCategoryFromFlags(image, rawPrimaryCategory);
+  const environmentKeywords = uniqueKeywords([image.environment]);
   const secondaryCategories = [
     ...new Set([
       ...normalizeTagList(image.secondaryCategories).map(canonicalCategory),
@@ -195,7 +291,11 @@ function getImageProfile(image = {}) {
       isFashion: Boolean(image.isFashion) || primaryCategory === "fashion",
       isTech: Boolean(image.isTech) || primaryCategory === "tech",
       isAnimeOrIllustration: Boolean(image.isAnimeOrIllustration) || primaryCategory === "anime",
+      isMusicOrConcert: Boolean(image.isMusicOrConcert) || primaryCategory === "music",
+      isVehicle: Boolean(image.isVehicle) || primaryCategory === "vehicle",
+      isCampusOrFriends: Boolean(image.isCampusOrFriends) || primaryCategory === "campus",
     },
+    environmentKeywords,
   };
 }
 
@@ -237,20 +337,57 @@ function buildBoardProfile(board, boardPins = [], predictions = []) {
       foodVsTech: dominantCategories.includes("tech") && !/(food|recipe|kitchen|meal)/.test(boardText),
       animeVsInterior: dominantCategories.includes("interior") && !/(anime|manga|art|illustration|wallpaper|poster)/.test(boardText),
       techVsFashion: dominantCategories.includes("fashion") && !/(tech|coding|ui|dashboard|developer)/.test(boardText),
+      natureBlackHole:
+        dominantCategories.includes("nature") &&
+        !/(nature|flower|forest|mountain|beach|landscape|plant|garden|wildlife|animal|pet|travel)/.test(boardText),
     },
   };
 }
 
+function isCategoryCompatible(imageProfile, boardProfile) {
+  const boardCategories = boardProfile.dominantCategories;
+  if (!boardCategories.length) return true;
+  const imageCategory = imageProfile.primaryCategory;
+  if (!directCategoryNames.has(imageCategory)) return false;
+  const compatible = compatibleCategoryMap[imageCategory] || new Set([imageCategory]);
+  return boardCategories.some((category) => compatible.has(category));
+}
+
 function categoryScore(imageProfile, boardProfile) {
+  if (!isCategoryCompatible(imageProfile, boardProfile)) return 0;
   if (boardProfile.dominantCategories.includes(imageProfile.primaryCategory)) return 1;
-  if (imageProfile.secondaryCategories.some((category) => boardProfile.dominantCategories.includes(category))) return 0.55;
-  if (!boardProfile.dominantCategories.length) return 0.12;
+  if (imageProfile.secondaryCategories.some((category) => boardProfile.dominantCategories.includes(category))) return 0.45;
+  if (!boardProfile.dominantCategories.length) return 0.08;
   return 0;
 }
 
 function negativePenalty(imageProfile, boardProfile) {
   const reasons = [];
   let penalty = 0;
+  const categoryCompatible = isCategoryCompatible(imageProfile, boardProfile);
+  if (!categoryCompatible) {
+    penalty += 0.46;
+    reasons.push(`${imageProfile.primaryCategory} primary subject is not compatible with ${boardProfile.boardName}`);
+  }
+  if (
+    boardProfile.dominantCategories.includes("nature") &&
+    !["nature", "animal", "travel"].includes(imageProfile.primaryCategory)
+  ) {
+    penalty += 0.34;
+    reasons.push("background nature signals are not enough when the primary subject is not nature");
+  }
+  if (imageProfile.flags.isMusicOrConcert && boardProfile.dominantCategories.includes("nature")) {
+    penalty += 0.3;
+    reasons.push("concert/music subject should not be filed by outdoor nature context");
+  }
+  if (imageProfile.flags.isFashion && boardProfile.dominantCategories.includes("nature")) {
+    penalty += 0.3;
+    reasons.push("fashion subject should not be filed by outdoor nature context");
+  }
+  if (imageProfile.flags.isCampusOrFriends && boardProfile.dominantCategories.includes("nature")) {
+    penalty += 0.3;
+    reasons.push("campus/friends subject should not be filed by trees or outdoor context");
+  }
   if (imageProfile.flags.isAnimal && boardProfile.negativeHints.animalVsInterior) {
     penalty += 0.35;
     reasons.push("animal image conflicts with an interior/decor board");
@@ -267,12 +404,13 @@ function negativePenalty(imageProfile, boardProfile) {
     penalty += 0.32;
     reasons.push("tech/UI image conflicts with a fashion board");
   }
-  return { penalty: Math.min(0.55, penalty), reasons };
+  return { penalty: Math.min(0.72, penalty), reasons };
 }
 
 function scoreBoard(profile, imageProfile) {
   const boardNameTokens = tokenize(profile.boardName);
   const subjectTokens = tokenize(imageProfile.primarySubject);
+  const categoryCompatible = isCategoryCompatible(imageProfile, profile);
   const category = categoryScore(imageProfile, profile);
   const subject = overlapScore(subjectTokens, profile.subjects);
   const tags = overlapScore(imageProfile.detectedTags, profile.profileTags);
@@ -280,6 +418,7 @@ function scoreBoard(profile, imageProfile) {
   const style = overlapScore(imageProfile.style, profile.profileTags);
   const mood = overlapScore(imageProfile.mood, profile.profileTags);
   const color = overlapScore(imageProfile.colors, profile.profileTags);
+  const environment = overlapScore(imageProfile.environmentKeywords, profile.profileTags);
   const nameExact =
     boardNameTokens.includes(imageProfile.primaryCategory) ||
     subjectTokens.some((token) => boardNameTokens.includes(token)) ||
@@ -288,17 +427,20 @@ function scoreBoard(profile, imageProfile) {
       : 0;
   const keyword = overlapScore(imageProfile.keywords, profile.keywords);
   const negative = negativePenalty(imageProfile, profile);
+  const weakKeywordScore = categoryCompatible ? Math.min(0.04, keyword.score * 0.04) : 0;
+  const supportingEnvironmentScore = categoryCompatible ? Math.min(0.015, environment.score * 0.015) : 0;
 
   const rawScore =
-    category * 0.31 +
-    subject.score * 0.18 +
-    objects.score * 0.13 +
-    tags.score * 0.15 +
-    style.score * 0.08 +
-    mood.score * 0.06 +
-    color.score * 0.03 +
-    nameExact * 0.16 +
-    Math.min(0.12, keyword.score * 0.12);
+    category * 0.42 +
+    subject.score * 0.22 +
+    objects.score * 0.15 +
+    tags.score * 0.08 +
+    style.score * 0.035 +
+    mood.score * 0.025 +
+    color.score * 0.01 +
+    nameExact * 0.12 +
+    weakKeywordScore +
+    supportingEnvironmentScore;
   const score = Math.max(0, Math.min(0.98, rawScore - negative.penalty));
   const matchedSignals = [
     ...new Set([
@@ -317,17 +459,24 @@ function scoreBoard(profile, imageProfile) {
     score,
     rawScore,
     categoryScore: category,
+    categoryCompatible,
     subjectScore: subject.score,
     penalty: negative.penalty,
     penaltyReasons: negative.reasons,
     matchedSignals,
-    rejectedReason: negative.reasons[0] || (category === 0 ? `no strong ${imageProfile.primaryCategory} category overlap` : null),
+    rejectedReason:
+      negative.reasons[0] ||
+      (!categoryCompatible
+        ? `${profile.boardName} is not category-compatible with ${imageProfile.primaryCategory}`
+        : category === 0
+          ? `no strong ${imageProfile.primaryCategory} category overlap`
+          : null),
     visualIdentity: profile.profileTags.slice(0, 8).join(", ") || profile.boardName,
   };
 }
 
 function actionForConfidence(confidence, winner) {
-  if (!winner || winner.categoryScore < 0.55 || winner.penalty >= 0.32) return "suggest_new_board";
+  if (!winner || !winner.categoryCompatible || winner.categoryScore < 0.45 || winner.penalty >= 0.32) return "suggest_new_board";
   if (confidence >= AUTO_SAVE_THRESHOLD) return "auto_save";
   if (confidence >= CONFIRM_THRESHOLD) return "confirm";
   return "suggest_new_board";
@@ -342,7 +491,11 @@ function prettyWords(value = "") {
 }
 
 function suggestBoardName(imageProfile, detectedTags) {
+  if (categoryBoardNames[imageProfile.primaryCategory]) return categoryBoardNames[imageProfile.primaryCategory];
   if (imageProfile.flags.isAnimal) return imageProfile.detectedTags.includes("pet") ? "Cute Pets" : "Animal Photography";
+  if (imageProfile.flags.isMusicOrConcert) return "Concerts / Music Events";
+  if (imageProfile.flags.isCampusOrFriends) return "Campus Life / Friends";
+  if (imageProfile.flags.isVehicle) return "Vehicles";
   if (imageProfile.flags.isAnimeOrIllustration) return "Anime Aesthetic";
   if (imageProfile.flags.isTech) return "Coding & UI Ideas";
   if (imageProfile.flags.isFood) return "Recipe Ideas";
@@ -421,9 +574,12 @@ export function analyzeImageForBoards({ boards = [], pins = [], predictions = []
   const winner = scores[0];
   const second = scores[1];
   const margin = winner.score - (second?.score || 0);
-  const confidenceBoost = winner.categoryScore >= 1 && winner.matchedSignals.length >= 1 ? 0.08 : 0;
+  const confidenceBoost = winner.categoryCompatible && winner.categoryScore >= 1 && winner.matchedSignals.length >= 1 ? 0.08 : 0;
   const confidence = Math.max(0, Math.min(0.98, winner.score + confidenceBoost + Math.min(0.08, Math.max(0, margin) * 0.35)));
-  const hasStrongSubjectOverlap = winner.categoryScore >= 0.55 && (winner.matchedSignals.length >= 1 || winner.subjectScore > 0 || winner.score >= 0.5);
+  const hasStrongSubjectOverlap =
+    winner.categoryCompatible &&
+    winner.categoryScore >= 0.45 &&
+    (winner.matchedSignals.length >= 1 || winner.subjectScore > 0 || winner.score >= 0.5);
   const action = hasStrongSubjectOverlap ? actionForConfidence(confidence, winner) : "suggest_new_board";
   const reasoning = debugReasoning(action, winner, scores, imageProfile);
 
@@ -456,7 +612,9 @@ export function analyzeImageForBoards({ boards = [], pins = [], predictions = []
       score: Math.round(item.score * 100),
       confidence: Math.round(Math.max(0, Math.min(0.98, item.score)) * 100),
       categoryScore: Math.round(item.categoryScore * 100),
+      categoryCompatible: item.categoryCompatible,
       penalty: Math.round(item.penalty * 100),
+      penaltyReasons: item.penaltyReasons,
       matchedSignals: item.matchedSignals,
       rejectedReason: item.rejectedReason,
       visualIdentity: item.visualIdentity,

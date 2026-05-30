@@ -114,8 +114,8 @@ After vision analysis, PinMind:
 
 1. Builds an image profile from the primary subject, primary category, tags, objects, style, colors, mood, environment, and boolean visual flags.
 2. Builds board profiles from board name, description, tags, saved pins, and previous AI prediction signals.
-3. Scores each board with high weight for primary category and subject, medium weight for detected tags/style/mood, and low weight for colors.
-4. Applies mismatch penalties, such as animal vs room decor, food vs tech, anime vs room decor, and tech/UI vs fashion.
+3. Scores each board with dominant weight for primary category and primary subject, medium weight for detected objects/tags, and tiny supporting weight for style, mood, colors, and environment.
+4. Applies mismatch penalties, such as animal vs room decor, food vs tech, anime vs room decor, tech/UI vs fashion, and Nature vs non-nature primary subjects.
 5. Returns the top 3 candidate boards with scores and rejection reasoning for debugging.
 6. Refuses to force weak matches into existing boards.
 
@@ -128,6 +128,14 @@ confidence < 0.60        suggest_new_board
 ```
 
 If the best board has a high category mismatch penalty or no strong category/subject overlap, PinMind forces `suggest_new_board` even when one board has the highest weak score.
+
+Nature black-hole prevention:
+
+- Background words such as `outdoor`, `green`, `grass`, `trees`, `sunlight`, `natural light`, `beautiful`, and `photography` are treated as weak context, not primary category evidence.
+- A Nature board can only win when the primary subject/category is nature, plants, flowers, landscapes, wildlife, animals, or a compatible travel/nature scene.
+- Fashion, concerts/music, campus friends, coding/tech, food, vehicles, anime, and interiors receive category mismatch penalties against Nature even if the photo was taken outside.
+- Board size, pin count, first-board order, and recently used boards are not scoring bonuses. They only appear in the UI as metadata.
+- Development responses include top board scores, category compatibility, penalties, and rejection reasons so bad matches can be debugged without showing that noisy data to normal users.
 
 Autonomous Smart Save is the default upload flow:
 
@@ -162,6 +170,15 @@ Board-name safety:
 - Gemini's primary subject/category and boolean flags are prioritized over provider metadata.
 - Vehicles is strict: PinMind only chooses `Vehicles` when Gemini marks `isVehicle`, the primary category is vehicle/transportation, or the primary detected object is clearly a car, bike, motorcycle, truck, or bus. Concert and fashion images cannot become Vehicles because of weak metadata.
 - Existing boards are reused by exact name, singular/plural normalization, alias groups, and category keyword overlap.
+
+Matching regression test:
+
+```bash
+cd server
+npm run test:matching
+```
+
+This covers the main black-hole cases: a Nature board with several pins must not capture dress, concert, campus friends, or coding images, while flower/forest images should still match Nature.
 
 Undo behavior:
 
